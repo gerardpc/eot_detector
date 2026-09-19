@@ -1,0 +1,1 @@
+"""FastAPI UI package."""
