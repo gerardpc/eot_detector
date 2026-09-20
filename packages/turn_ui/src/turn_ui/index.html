@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>End of turn</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; background: #09111f; color: #e5edf8; }
+    main { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0; }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; letter-spacing: -.03em; }
+    .lead { color: #9fb0c7; max-width: 720px; line-height: 1.5; margin: 0 0 20px; }
+    .panel { background: #101c2e; border: 1px solid #233654; border-radius: 16px; padding: 20px; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+    button { border: 0; border-radius: 999px; padding: 10px 18px; color: #06111e; background: #7dd3fc; font-weight: 700; cursor: pointer; }
+    button.stop { background: #fda4af; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    label { color: #9fb0c7; font-size: .9rem; }
+    select, input[type="url"] { background: #0b1627; color: #e5edf8; border: 1px solid #233654; border-radius: 8px; padding: 8px 10px; }
+    input[type="url"] { width: min(280px, 100%); }
+    #status { color: #9fb0c7; }
+    .meter { height: 8px; margin: 16px 0 12px; background: #0a1424; border-radius: 99px; overflow: hidden; }
+    #level { display: block; width: 0; height: 100%; background: #38bdf8; }
+    #state { font-size: 1.4rem; font-weight: 800; text-transform: uppercase; margin: 0 0 12px; }
+    .timeline-wrap { background: #0b1627; border: 1px solid #233654; border-radius: 12px; padding: 12px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 8px; }
+    .legend span { display: flex; align-items: center; gap: 6px; color: #b8c7da; font-size: .78rem; }
+    .swatch { width: 10px; height: 10px; border-radius: 99px; }
+    #timeline { width: 100%; height: 240px; display: block; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>End of turn</h1>
+  <p class="lead">Human-side detector for voice agents. VAD for speech. After 100 ms of silence a classifier scores hold vs end of turn on the last 5 s. After 3 s of silence, end of turn is forced.</p>
+  <section class="panel">
+    <div class="row">
+      <button id="toggle">Start listening</button>
+      <label>Runtime
+        <input id="runtime-url" type="url" spellcheck="false" autocomplete="off">
+      </label>
+      <label>Head
+        <select id="head"></select>
+      </label>
+      <span id="status">Idle.</span>
+    </div>
+    <div class="meter"><span id="level"></span></div>
+    <div id="state">hold</div>
+    <div class="timeline-wrap">
+      <div class="legend" id="legend"></div>
+      <canvas id="timeline" width="1000" height="240" aria-label="State probability over time"></canvas>
+    </div>
+  </section>
+</main>
+<script>
+const DEFAULT_RUNTIME_URL = '__RUNTIME_URL__';
+const RUNTIME_URL_KEY = 'eot-runtime-url';
+const SERIES = [
+  {key: 'speaking', label: 'Speaking', color: '#34d399'},
+  {key: 'hold', label: 'Hold', color: '#a78bfa'},
+  {key: 'eot', label: 'EOT', color: '#38bdf8'},
+];
+const HISTORY = 120;
+const history = SERIES.map(() => Array(HISTORY).fill(null));
+const toggle = document.querySelector('#toggle');
+const statusEl = document.querySelector('#status');
+const stateEl = document.querySelector('#state');
+const levelEl = document.querySelector('#level');
+const headEl = document.querySelector('#head');
+const runtimeUrlEl = document.querySelector('#runtime-url');
+const canvas = document.querySelector('#timeline');
+const ctx = canvas.getContext('2d');
+const legend = document.querySelector('#legend');
+let audioContext, source, processor, mute, stream, socket, recording = false;
+
+SERIES.forEach(series => {
+  const item = document.createElement('span');
+  item.innerHTML = `<i class="swatch" style="background:${series.color}"></i>${series.label}`;
+  legend.append(item);
+});
+
+function setStatus(text) { statusEl.textContent = text; }
+
+function runtimeOrigin() {
+  return (runtimeUrlEl.value.trim() || DEFAULT_RUNTIME_URL).replace(/\/$/, '');
+}
+
+function runtimeHttp(path) {
+  return `${runtimeOrigin()}${path}`;
+}
+
+function runtimeWs(path) {
+  const origin = runtimeOrigin();
+  const url = new URL(path, origin.endsWith('/') ? origin : `${origin}/`);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
+
+function pushHistory(state, pEot) {
+  const speaking = state === 'speaking' ? 1 : 0;
+  const eot = state === 'speaking' ? 0 : Math.min(1, Math.max(0, Number(pEot) || 0));
+  const hold = state === 'speaking' ? 0 : 1 - eot;
+  const values = [speaking, hold, eot];
+  SERIES.forEach((_, i) => {
+    history[i].push(values[i]);
+    if (history[i].length > HISTORY) history[i].shift();
+  });
+}
+
+function drawTimeline() {
+  const dpr = window.devicePixelRatio || 1, width = canvas.clientWidth, height = canvas.clientHeight;
+  canvas.width = width * dpr; canvas.height = height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#071018'; ctx.fillRect(0, 0, width, height);
+  const left = 72, right = 12, top = 10, bottom = 22;
+  const plotW = width - left - right, plotH = height - top - bottom;
+  ctx.strokeStyle = '#1e334d'; ctx.lineWidth = 1; ctx.font = '11px system-ui'; ctx.fillStyle = '#6f849c';
+  [0, 0.5, 1].forEach(tick => {
+    const y = top + plotH * (1 - tick);
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + plotW, y); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.fillText(tick.toFixed(1), left - 8, y + 4);
+  });
+  ctx.save();
+  ctx.translate(14, top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText('state probability', 0, 0);
+  ctx.restore();
+  ctx.textAlign = 'left'; ctx.fillText('30s ago', left, height - 6);
+  ctx.textAlign = 'right'; ctx.fillText('now', left + plotW, height - 6);
+  SERIES.forEach((series, s) => {
+    const points = [];
+    for (let i = 0; i < HISTORY; i++) {
+      const value = history[s][i];
+      if (value == null) continue;
+      points.push([left + plotW * (i / (HISTORY - 1)), top + plotH * (1 - value)]);
+    }
+    if (points.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0][0], top + plotH);
+    points.forEach(([x, y]) => ctx.lineTo(x, y));
+    ctx.lineTo(points[points.length - 1][0], top + plotH);
+    ctx.closePath();
+    ctx.fillStyle = series.color + '33';
+    ctx.fill();
+    ctx.beginPath();
+    points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    ctx.strokeStyle = series.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+}
+
+function applyEvent(payload) {
+  const state = payload.state || 'hold';
+  const pEot = Number(payload.p_eot) || 0;
+  stateEl.textContent = state;
+  stateEl.style.color = (SERIES.find(s => s.key === state) || SERIES[1]).color;
+  pushHistory(state, pEot);
+  drawTimeline();
+  const silence = Number(payload.silence_seconds) || 0;
+  if (state === 'speaking') {
+    setStatus('speaking');
+    return;
+  }
+  setStatus(`${state} · p(eot) ${pEot.toFixed(2)} · ${Math.round(silence * 1000)} ms`);
+}
+
+async function loadHeads() {
+  const response = await fetch(runtimeHttp('/heads'));
+  const payload = await response.json();
+  headEl.innerHTML = '';
+  (payload.heads || []).forEach(item => {
+    const option = document.createElement('option');
+    option.value = item.id;
+    option.textContent = item.label;
+    if (item.id === (payload.selected || 'current')) option.selected = true;
+    headEl.append(option);
+  });
+  if (!headEl.value) {
+    const option = document.createElement('option');
+    option.value = 'current';
+    option.textContent = 'current';
+    option.selected = true;
+    headEl.append(option);
+  }
+}
+
+headEl.addEventListener('change', () => {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({type: 'head', id: headEl.value}));
+  }
+});
+
+runtimeUrlEl.addEventListener('change', () => {
+  localStorage.setItem(RUNTIME_URL_KEY, runtimeOrigin());
+  loadHeads().catch(() => {
+    headEl.innerHTML = '<option value="current" selected>current</option>';
+  });
+});
+
+function connectSocket(sampleRate) {
+  socket = new WebSocket(runtimeWs('/ws'));
+  socket.binaryType = 'arraybuffer';
+  socket.onmessage = event => {
+    const payload = JSON.parse(event.data);
+    if (payload.state) applyEvent(payload);
+  };
+  socket.onerror = () => setStatus('Live stream unavailable');
+  return new Promise((resolve, reject) => {
+    socket.onopen = () => {
+      socket.send(JSON.stringify({type: 'start', sampleRate, head: headEl.value || 'current'}));
+      resolve();
+    };
+    socket.onclose = () => { if (recording) setStatus('Live stream closed'); };
+    setTimeout(() => reject(new Error('websocket timeout')), 4000);
+  });
+}
+
+async function start() {
+  toggle.disabled = true; setStatus('Starting…');
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1}});
+    audioContext = new AudioContext();
+    await connectSocket(audioContext.sampleRate);
+    source = audioContext.createMediaStreamSource(stream);
+    processor = audioContext.createScriptProcessor(4096, 1, 1);
+    mute = audioContext.createGain(); mute.gain.value = 0;
+    processor.onaudioprocess = event => {
+      const input = event.inputBuffer.getChannelData(0);
+      let energy = 0; for (const x of input) energy += x * x;
+      levelEl.style.width = `${Math.min(100, Math.sqrt(energy / input.length) * 300)}%`;
+      if (socket && socket.readyState === WebSocket.OPEN) socket.send(Float32Array.from(input).buffer);
+    };
+    source.connect(processor); processor.connect(mute); mute.connect(audioContext.destination);
+    recording = true;
+    runtimeUrlEl.disabled = true;
+    toggle.disabled = false; toggle.textContent = 'Stop listening'; toggle.classList.add('stop');
+  } catch (error) { toggle.disabled = false; setStatus(`Cannot start: ${error.message}`); }
+}
+
+function stop() {
+  recording = false;
+  if (socket) { socket.close(); socket = null; }
+  if (processor) processor.disconnect(); if (source) source.disconnect(); if (mute) mute.disconnect();
+  if (stream) stream.getTracks().forEach(track => track.stop());
+  if (audioContext) audioContext.close();
+  runtimeUrlEl.disabled = false;
+  toggle.textContent = 'Start listening'; toggle.classList.remove('stop'); levelEl.style.width = '0'; setStatus('Stopped.');
+}
+
+toggle.addEventListener('click', () => recording ? stop() : start());
+window.addEventListener('resize', drawTimeline);
+runtimeUrlEl.value = localStorage.getItem(RUNTIME_URL_KEY) || DEFAULT_RUNTIME_URL;
+loadHeads().catch(() => {
+  headEl.innerHTML = '<option value="current" selected>current</option>';
+});
+drawTimeline();
+</script>
+</body>
+</html>

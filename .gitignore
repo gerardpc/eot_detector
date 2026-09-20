@@ -10,6 +10,7 @@ __pycache__/
 # Model, dataset, benchmark, and UI runtime state.
 data/
 work/
+models/
 
 # Local environment files.
 .env

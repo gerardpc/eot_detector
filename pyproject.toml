@@ -1,7 +1,7 @@
 [project]
-name = "happy-robot"
+name = "eot-detector"
 version = "0.1.0"
-description = "A small audio-native turn-taking monorepo."
+description = "End-of-turn detector for the human side of a voice-agent call."
 requires-python = ">=3.11,<3.14"
 readme = "README.md"
 dependencies = []
@@ -27,14 +27,14 @@ default-groups = ["dev"]
 members = [
     "packages/turn_runtime",
     "packages/turn_ui",
-    "packages/eot_bench",
+    "packages/ml_core",
 ]
 
 [tool.pytest.ini_options]
 testpaths = [
     "packages/turn_runtime/tests",
     "packages/turn_ui/tests",
-    "packages/eot_bench/tests",
+    "packages/ml_core/tests",
 ]
 addopts = "-p no:warnings"
 
