@@ -89,7 +89,7 @@ def list_pause_heads(root: Path | None = None) -> list[dict[str, str]]:
             except json.JSONDecodeError:
                 meta = {}
             best = meta.get("best_val_loss")
-            if isinstance(best, (int, float)):
+            if isinstance(best, int | float):
                 label = f"{run.name}  val {float(best):.3f}"
         items.append({"id": run.name, "label": label})
     return items
