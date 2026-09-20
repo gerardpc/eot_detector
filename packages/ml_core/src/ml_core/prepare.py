@@ -7,12 +7,17 @@ import csv
 import hashlib
 import io
 import json
+from logging import getLogger
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
+from turn_runtime.config.logging_setup import setup_logging
 
 from .samples import CONTEXT_SECONDS, MIN_PAUSE_SECONDS, clip_window, pause_cut_times
+
+_logger = getLogger(__name__)
+"""Logger for dataset download and clip-writing progress."""
 
 DATASET_ID = "livekit/eot-bench-data"
 """Hugging Face dataset used to cut homemade hold/eot clips."""
@@ -201,7 +206,7 @@ def prepare_dataset(dataset: object | None = None, *, split_seed: int = 0) -> Pa
                     }
                 )
         if index % 100 == 0:
-            print(f"processed {index} turns, {len(records)} clips")
+            _logger.info("processed %s turns, %s clips", index, len(records))
 
     with index_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -229,7 +234,7 @@ def prepare_dataset(dataset: object | None = None, *, split_seed: int = 0) -> Pa
         DATASET_README.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    print(f"wrote {len(records)} clips to {out}")
+    _logger.info("wrote %s clips to %s", len(records), out)
     return out
 
 
@@ -238,8 +243,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Download eot-bench-data and write pause clips.")
     parser.add_argument("--split-seed", type=int, default=0)
     args = parser.parse_args()
+    setup_logging()
     path = prepare_dataset(split_seed=args.split_seed)
-    print(path)
+    _logger.info("dataset ready at %s", path)
 
 
 if __name__ == "__main__":

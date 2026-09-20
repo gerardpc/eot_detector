@@ -13,7 +13,7 @@ A downstream agent should start its turn on `eot` and stay silent otherwise.
 
 | Doc | What it covers |
 | --- | --- |
-| [`SETUP.md`](SETUP.md) | Install, run the UI, train, Docker |
+| [`SETUP.md`](SETUP.md) | Install, run the UI, train, Docker, encoder stress |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Decision path, model, data, serving |
 
 | Package | Role |

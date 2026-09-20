@@ -8,6 +8,7 @@ The HTTP layer is the contract for live clients. Training still imports
 ## Purpose
 
 - validate and serve live PCM over a WebSocket
+- score one WAV at a time on `POST /infer`
 - list pause-head runs on disk
 - load one frozen Whisper-tiny encoder for the process
 - keep VAD state per connection
@@ -24,6 +25,7 @@ turn_runtime/
 ├── routers/
 │   ├── health.py          GET /health, GET /version
 │   ├── heads.py           GET /heads
+│   ├── infer.py           POST /infer
 │   └── stream.py          WS /ws
 ├── settings/
 │   └── settings.py        Pydantic settings from environment / `.env`
@@ -31,28 +33,27 @@ turn_runtime/
 ├── classifier.py          Pause head; versioned `best.pt` / `latest.pt`
 ├── whisper.py             Frozen encoder, log-mel, resample
 ├── cli.py                 File WAV CLI
+├── stress.py              Offered-RPS sweep; markdown report + plots
 └── download.py            Hugging Face snapshot into `models/whisper-tiny/`
 ```
 
 ## Request flow
 
 ```text
-Browser (turn_ui)
+Browser (turn_ui) or POST /infer client
         │
-        ├─ GET /heads ─────────────────────────────┐
-        └─ WS /ws  {start, PCM frames, head}       │
-                                                   ▼
-                                         turn_runtime.app
-                                                   │
-                         ┌─────────────────────────┼─────────────────────────┐
-                         ▼                         ▼                         ▼
-                   routers/heads             routers/stream            routers/health
-                         │                         │
-                         ▼                         ▼
-                 list_pause_heads           per-socket TurnRunner
-                                                   │
-                                                   ├─ energy VAD (20 ms)
-                                                   └─ shared PauseClassifier (locked)
+        ├─ GET /health, GET /heads
+        ├─ POST /infer  WAV → p_eot, latency_ms
+        └─ WS /ws  {start, PCM frames, head}
+                │
+                ▼
+        turn_runtime.app  (one locked PauseClassifier)
+                │
+        ┌───────┼────────────────┐
+        ▼       ▼                ▼
+     heads   stream           infer
+               │
+               └─ per-socket TurnRunner (energy VAD)
 ```
 
 ## Lifespan and readiness

@@ -109,7 +109,9 @@ goes from the browser to port **8766**. The UI server only hands the
 page to the user, but it never actually sees the audio.
 
 - Ordinary HTTP on the runtime: `GET /health`, `GET /heads` (list trained
-  pause heads).
+  pause heads), and `POST /infer` (one WAV in, `p(eot)` and `latency_ms`
+  out — encoder + head under the shared lock). That last route is the
+  model API a later speech frontend would call from time to time.
 - A **WebSocket** on `ws://…:8766/ws`: the browser sends PCM samples;
   the runtime replies with `{speaking, hold, eot}` and `p(eot)`. A
   WebSocket is a long-lived TCP connection, not one HTTP request per
@@ -122,7 +124,7 @@ timers.
 ```mermaid
 flowchart LR
   ui["turn-ui :8765<br/>HTML page only"] --> browser[Browser]
-  browser -->|"HTTP /heads<br/>WebSocket PCM"| runtime["turn-runtime :8766<br/>FastAPI + model"]
+  browser -->|"HTTP /heads, /infer<br/>WebSocket PCM"| runtime["turn-runtime :8766<br/>FastAPI + model"]
 ```
 
 Run commands are in [`SETUP.md`](SETUP.md#live-ui).
@@ -146,5 +148,14 @@ new HTTP request per chunk. WebRTC would add ICE, DTLS, and a codec we
 do not need: there is no peer-to-peer call here.
 
 The Whisper encoder is shared and locked: one forward at a time per
-runtime process. Stress tests should hit `/ws` and not assume N sockets
-mean N parallel inferences.
+runtime process. Extra HTTP or WebSocket clients mostly queue; they do
+not run N encoder forwards in parallel.
+
+`turn-runtime-stress` is the encoder bench, not a socket flood. It
+replays clips from `data/train_dataset/` (in-process, or `POST /infer`
+with `--url`) at a list of offered rates. For each rate it records
+achieved forwards/s and the latency distribution (client wall clock, and
+the `/infer` `latency_ms` field). Output is a markdown report with plots
+under `data/stress_tests/<datetime>/`. How to run it is in
+[`SETUP.md`](SETUP.md#encoder-throughput). The live WebSocket path is a
+separate concern.

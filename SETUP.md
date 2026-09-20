@@ -38,8 +38,42 @@ relate is in [`ARCHITECTURE.md`](ARCHITECTURE.md#serving).
 uv run --package turn-runtime turn-runtime path/to/audio.wav
 ```
 
-Prints JSON with `state`, `silence_seconds`, `rms`, and `p_eot`. Same VAD +
-head path in-process; it does not call HTTP.
+Logs JSON with `state`, `silence_seconds`, `rms`, and `p_eot` (`LOG_LEVEL`,
+default INFO). Same VAD + head path in-process; it does not call HTTP.
+
+## Encoder throughput
+
+After `eot-prepare` (so `data/train_dataset/` exists):
+
+```bash
+uv run --package turn-runtime turn-runtime-stress
+uv run --package turn-runtime turn-runtime-stress --url http://127.0.0.1:8766
+```
+
+This is **not** a WebSocket load test. It scores training clips with the
+same encoder + pause head the runtime uses, and asks: at this many clip
+scores per second, what does latency look like?
+
+Default: preload 128 clips, then for each of `--rps 1,2,4,8,max` run
+`--seconds 10`. `1,2,4,8` are open-loop offered rates (try to start that
+many scores per second). `max` keeps `--workers` busy until the encoder
+cannot go faster. `--url` POSTs the same WAVs to `POST /infer` on a
+running server; without it, the CLI loads Whisper in-process.
+
+Each run writes `data/stress_tests/<YYYY-MM-DDTHH-MM-SS>/` (gitignored
+with the rest of `data/`):
+
+| File | Contents |
+| --- | --- |
+| `report.md` | Summary table plus the plots |
+| `latency_distribution.png` | Encoder latency box plot per offered RPS |
+| `throughput.png` | Achieved vs offered RPS, and p50/p99 vs rate |
+| `summary.json` | The same numbers, machine-readable |
+| `samples.csv` | One row per clip score |
+
+`--output-dir` overrides the folder. Extra `--workers` mostly queue on
+the shared encoder lock; they do not run N forwards in parallel. What
+the numbers mean is in [`ARCHITECTURE.md`](ARCHITECTURE.md#serving).
 
 ## Data and training
 

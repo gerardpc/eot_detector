@@ -6,6 +6,7 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "fastapi>=0.115.0",
     "huggingface-hub>=0.30.0",
+    "matplotlib>=3.8.0",
     "numpy>=1.26",
     "pydantic-settings>=2.11.0",
     "safetensors>=0.5.0",
@@ -17,6 +18,7 @@ dependencies = [
 [project.scripts]
 turn-runtime = "turn_runtime.cli:main"
 turn-runtime-serve = "turn_runtime.app:run"
+turn-runtime-stress = "turn_runtime.stress:main"
 
 [build-system]
 requires = ["hatchling"]

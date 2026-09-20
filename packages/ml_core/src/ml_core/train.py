@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 from datetime import UTC, datetime
+from logging import getLogger
 from pathlib import Path
 
 import numpy as np
@@ -14,11 +15,15 @@ import torch
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from turn_runtime.classifier import DEFAULT_HEAD_DIR, DEFAULT_MODEL_DIR, HEAD_NAME, PauseClassifier
+from turn_runtime.config.logging_setup import setup_logging
 from turn_runtime.download import download_whisper_tiny
 from turn_runtime.runtime import ENCODER_ID
 
 from .prepare import TARGET_SR, train_dir
 from .run_config import PauseHeadRunConfig
+
+_logger = getLogger(__name__)
+"""Logger for pause-head training progress."""
 
 
 def load_index(path: Path) -> list[dict[str, str]]:
@@ -185,7 +190,7 @@ def train(
         )
     whisper_weights = DEFAULT_MODEL_DIR / "model.safetensors"
     if not whisper_weights.is_file():
-        print(f"Whisper-tiny missing at {DEFAULT_MODEL_DIR}; downloading")
+        _logger.info("Whisper-tiny missing at %s; downloading", DEFAULT_MODEL_DIR)
         download_whisper_tiny(DEFAULT_MODEL_DIR)
     records = load_index(index_path)
     train_rows = [row for row in records if row["split"] == "train"]
@@ -229,11 +234,11 @@ def train(
         device=str(device),
     )
     write_config(run, config)
-    print(f"run directory {run}")
+    _logger.info("run directory %s", run)
     tb_dir = run / config.tensorboard_dir
     writer = SummaryWriter(log_dir=str(tb_dir))
     writer.add_text("config", config.model_dump_json(indent=2), 0)
-    print(f"tensorboard --logdir {store}")
+    _logger.info("tensorboard --logdir %s", store)
 
     best_val = float("inf")
     samples_seen = 0
@@ -306,11 +311,17 @@ def train(
                 },
             )
             _log_metrics(writer, samples_seen, metrics)
-            print(
-                f"epoch {epoch}/{epochs} samples={samples_seen} "
-                f"train_loss={metrics['train_loss']:.4f} train_acc={metrics['train_acc']:.3f} "
-                f"val_loss={metrics['val_loss']:.4f} val_acc={metrics['val_acc']:.3f}"
-                f"{' *best' if is_best else ''}"
+            _logger.info(
+                "epoch %s/%s samples=%s train_loss=%.4f train_acc=%.3f "
+                "val_loss=%.4f val_acc=%.3f%s",
+                epoch,
+                epochs,
+                samples_seen,
+                metrics["train_loss"],
+                metrics["train_acc"],
+                metrics["val_loss"],
+                metrics["val_acc"],
+                " *best" if is_best else "",
             )
 
         for epoch in range(epochs):
@@ -332,17 +343,17 @@ def train(
         classifier.eval()
         if samples_seen > 0:
             _save_checkpoint(classifier, run, store, config, is_best=False)
-            print(f"interrupted after {samples_seen} samples; saved {run}")
+            _logger.warning("interrupted after %s samples; saved %s", samples_seen, run)
         else:
             write_config(run, config)
-            print(f"interrupted before the first step; no weights in {run}")
+            _logger.warning("interrupted before the first step; no weights in %s", run)
         return run
     finally:
         writer.close()
 
     config.status = "completed"
     write_config(run, config)
-    print(f"saved head to {run}")
+    _logger.info("saved head to %s", run)
     return run
 
 
@@ -370,6 +381,7 @@ def main() -> None:
         help="Compute val loss every N training samples (also at epoch end).",
     )
     args = parser.parse_args()
+    setup_logging()
     train(
         dataset_dir=args.dataset_dir,
         out_dir=args.out_dir,

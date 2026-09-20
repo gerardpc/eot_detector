@@ -14,6 +14,7 @@ from turn_runtime.config.lifespan import lifespan
 from turn_runtime.config.logging_setup import setup_logging
 from turn_runtime.routers.heads import router as heads_router
 from turn_runtime.routers.health import router as health_router
+from turn_runtime.routers.infer import router as infer_router
 from turn_runtime.routers.stream import router as stream_router
 from turn_runtime.settings.settings import Settings, get_settings
 
@@ -60,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(heads_router)
+    app.include_router(infer_router)
     app.include_router(stream_router)
     return app
 
