@@ -1,23 +1,30 @@
 # Docker
 
-Container definitions for deploying the end-of-turn runtime as a standalone
-image.
+Container image for the end-of-turn runtime. The UI stays on the host (or
+another process); point it at the published port with `RUNTIME_URL` or the
+Model API IP field.
 
-## Current contents
+## Contents
 
 - [`turn_runtime/`](turn_runtime/README.md): FastAPI runtime with Whisper-tiny
-  and the current `best.pt` pause head baked in.
+  and Linear EMA 400 ms (`20260921-084831`) baked in as `current`
 
-The UI stays on the host (or a separate process). Point it at the published
-runtime port with `RUNTIME_URL` or the Model API IP field on the page.
+## Training artifacts
 
-## Relation with training artifacts
-
-Training writes `models/pause_head/<run_id>/best.pt` and points
-`models/pause_head/current` at that run. The runtime image copies:
+Training writes `models/pause_head/<run_id>/best.pt` and can retarget
+`models/pause_head/current`. The runtime image does **not** follow that
+symlink. It copies:
 
 - `models/whisper-tiny/` — frozen encoder snapshot
-- `models/pause_head/current/best.pt` and `config.json` — serving head
+- `models/pause_head/20260921-084831/{best.pt,config.json}` — into
+  `/models/pause_head/current/` (Linear, EMA 400 ms)
 
-Those paths are gitignored. Build from a machine that already ran
-`python -m turn_runtime.download` and `eot-train`.
+Those paths are gitignored. Before building:
+
+```bash
+uv run --package turn-runtime python -m turn_runtime.download
+# need models/pause_head/20260921-084831/ already, or:
+uv run --package eot-ml-core eot-train --head linear --pool ema --pool-ms 400 --epochs 100 --no-promote
+```
+
+Plain `eot-train` (tail 1 s) does not create the pinned run id.

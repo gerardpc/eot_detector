@@ -3,16 +3,18 @@
 Live end-of-turn runtime (`turn-runtime`).
 
 Speech vs silence is energy VAD (20 ms frames, 100 ms minimum silence). During a
-pause the runtime encodes the last ≤ 5 s with a frozen Whisper-tiny encoder,
-mean-pools the last **1 s** of encoder frames, and scores `p(eot)` with a
-linear `384 → 1` head. By default `p(eot) ≥ 0.5` is `eot`; otherwise `hold`.
-The live WebSocket session can override that cutoff anywhere in `[0, 1]`
-(`start.threshold` or `{type:"threshold", value}`). After 3 s of silence,
-`eot` is forced without calling the head.
+pause the runtime encodes the last ≤5 s with frozen Whisper-tiny, pools encoder
+frames per the selected run’s `config.json` (`mean`, `tail`, or `ema`), and
+scores `p(eot)` with that run’s head (`linear` or `linear-64-gelu-linear`). By
+default `p(eot) ≥ 0.5` is `eot`; otherwise `hold`. The live WebSocket session
+can override that cutoff in `[0, 1]` (`start.threshold` or
+`{type:"threshold", value}`). After 3 s of silence, `eot` is forced without
+calling the head.
 
-The encoder is `models/whisper-tiny/`. The head is
-`models/pause_head/current/best.pt`, then `latest.pt` if `best.pt` is missing.
-Without a trained run, pauses stay `hold` until the 3 s timeout.
+The encoder is `models/whisper-tiny/`. The default head is
+`models/pause_head/current/best.pt` (then `latest.pt` if `best.pt` is missing).
+Without a trained run, pauses stay `hold` until the 3 s timeout. The Docker
+image’s `current` is Linear + EMA 400 ms (`20260921-084831`).
 
 ## Serve
 

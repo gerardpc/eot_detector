@@ -1,19 +1,18 @@
 # End-of-turn detector
 
-This repository is an implementation of a real-time end-of-turn detector 
-for a human's turn in a human-voice agent conversation.
+Real-time end-of-turn detection for the human side of a voice-agent call.
 
-The system is always in one of the following states:
+The system is always in one of these states:
 
 - **speaking** — the human is talking
-- **hold** — the human has gone quiet, but it still sounds like a mid-turn pause
-- **eot** — the human has gone quiet, and it sounds like the turn is over
+- **hold** — quiet, but still mid-turn
+- **eot** — quiet, and the turn is over
 
-A downstream agent should start its turn on `eot` and stay silent otherwise.
+A downstream agent should start speaking on `eot` and stay silent otherwise.
 
 | Doc | What it covers |
 | --- | --- |
-| [`SETUP.md`](SETUP.md) | Install, run the UI, train, Docker, encoder stress |
+| [`SETUP.md`](SETUP.md) | Install, UI, train, Docker, encoder stress |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Decision path, model, data, serving |
 
 | Package | Role |

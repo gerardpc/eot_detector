@@ -64,3 +64,6 @@ normalized recency-weighted mean with that half-life.
 | `20260921-085616` | Linear, tail 1 s |
 | `20260921-085931` | Linear, tail 200 ms |
 | `20260921-093516` | MLP 384→64→GELU, tail 400 ms |
+
+Docker / image `current` is `20260921-084831` (Linear, EMA 400 ms). Language
+bars use `20260921-084027` (Linear, tail 400 ms).

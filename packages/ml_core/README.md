@@ -2,11 +2,14 @@
 
 Dataset preparation and pause-head training (`eot-ml-core`).
 
-This package downloads [`livekit/eot-bench-data`](https://huggingface.co/datasets/livekit/eot-bench-data),
+Downloads [`livekit/eot-bench-data`](https://huggingface.co/datasets/livekit/eot-bench-data),
 cuts causal pause clips, and trains a pause head on frozen Whisper-tiny
-embeddings used by `turn-runtime`. The recipe is a linear `384 → 1` head
-on a **tail pool** of the last **1 s** of encoder frames. Train and live
-inference share `PauseClassifier`.
+embeddings. Train and live inference share `PauseClassifier`.
+
+Default recipe: **linear** `384 → 1` with a **tail** pool over the last
+**1 s** of encoder frames. Other options: `--pool mean|tail|ema`,
+`--pool-ms`, `--head linear|linear-64-gelu-linear`. Live serving may use a
+different run (Docker: Linear EMA 400 ms).
 
 A hashed 80/20 split of the public validation set is for local training only.
 It is not an official eot-bench score.
@@ -51,8 +54,9 @@ Optional flags: `--head` (default `linear`), `--pool` (default `tail`),
 `--weight-decay`, `--seed`, `--split-seed`, `--run-id`, `--eval-every`,
 `--dataset-dir`, `--out-dir`, `--no-promote`.
 
-`--pool tail` averages the last 1 s of encoder frames. `--no-promote`
-keeps `current` on the previous run.
+`--pool tail` averages the last `pool_ms` of encoder frames; `--pool ema`
+uses a half-life of `pool_ms`. `--no-promote` keeps `current` on the
+previous run.
 
 ## Training runs
 
@@ -74,8 +78,8 @@ Validation loss is computed every **3000 training samples** (override with
 
 Checkpoints are for inference. Optimizer state is not saved; starting train
 again creates a new `run_id`. Ctrl+C after the first eval still leaves
-`latest.pt` / `best.pt` on disk. Start the runtime again, or pick the run in
-the Head menu, to load them.
+`latest.pt` / `best.pt` on disk. Restart the runtime, or pick the run in the
+ML Model menu, to load them.
 
 Package internals: [`src/ml_core/README.md`](src/ml_core/README.md).
 

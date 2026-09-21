@@ -1,25 +1,30 @@
 # `turn_runtime` Docker image
 
 Standalone FastAPI image for live end-of-turn detection on human audio.
-Whisper-tiny and the current pause-head `best.pt` are copied into the image at
-build time.
+Whisper-tiny and Linear EMA 400 ms (`20260921-084831`) are copied into
+`/models/pause_head/current/` at build time.
 
 ## Prerequisites
 
-From the repository root, before you build:
+From the repository root:
 
 ```bash
 uv run --package turn-runtime python -m turn_runtime.download
-uv run --package eot-ml-core eot-train
 ```
 
-`models/whisper-tiny/model.safetensors` and
-`models/pause_head/current/best.pt` must exist. The Dockerfile copies those
-paths; a missing file fails the build.
+You also need `models/pause_head/20260921-084831/{best.pt,config.json}`.
+That folder is Linear + EMA 400 ms. Plain `eot-train` (default: linear +
+tail 1 s) does not create it. Either keep the existing run, or:
+
+```bash
+uv run --package eot-ml-core eot-train --head linear --pool ema --pool-ms 400 --epochs 100 --no-promote
+```
+
+A missing path fails the build.
 
 ## Build
 
-Run from the repository root (do not build until you intend to):
+From the repository root:
 
 ```bash
 docker build -t eot-runtime:local -f docker/turn_runtime/Dockerfile .
@@ -31,21 +36,20 @@ docker build -t eot-runtime:local -f docker/turn_runtime/Dockerfile .
 docker run --rm -p 8766:8766 eot-runtime:local
 ```
 
-The process binds `0.0.0.0:8766` inside the container. Map that to the host
-with `-p 8766:8766`.
+The process binds `0.0.0.0:8766` inside the container.
 
-Point the UI at the published address:
+Point the UI at it:
 
 ```bash
 RUNTIME_URL=http://127.0.0.1:8766 uv run --package turn-ui turn-ui
 ```
 
-If the UI runs on another machine, use the host’s reachable IP instead of
-`127.0.0.1`, for example `http://192.168.1.10:8766`. You can also type that
-origin into the Model API IP field on the page without restarting the UI.
+On another machine, use the host’s reachable IP (for example
+`http://192.168.1.10:8766`), or type that into the Model API IP field on
+the page.
 
-The image sets `CORS_ALLOWED_ORIGINS=*` so any browser origin can call `/heads`
-and `/ws`. Override if you want a tighter list:
+The image sets `CORS_ALLOWED_ORIGINS=*` (comma-separated origins also work).
+Tighter example:
 
 ```bash
 docker run --rm -p 8766:8766 \
@@ -57,12 +61,12 @@ docker run --rm -p 8766:8766 \
 
 ```text
 /models/whisper-tiny/          frozen encoder snapshot
-/models/pause_head/current/    best.pt + config.json
+/models/pause_head/current/    best.pt + config.json  (EMA 400 ms bake)
 ```
 
-`WHISPER_MODEL_DIR` and `PAUSE_HEAD_DIR` point at those paths. The Head menu
-only lists what was baked in (`current`). Mount a different `pause_head` tree
-if you want extra runs without rebuilding:
+`WHISPER_MODEL_DIR` and `PAUSE_HEAD_DIR` point at those paths. The ML Model
+menu only lists what was baked in (`current`). Mount a different tree for
+extra runs without rebuilding:
 
 ```bash
 docker run --rm -p 8766:8766 \
@@ -74,5 +78,5 @@ docker run --rm -p 8766:8766 \
 
 - Publish port `8766` (or set `PORT` and map that).
 - Give clients `http://<host>:<port>` as `RUNTIME_URL`.
-- Keep `HOST=0.0.0.0` so the process accepts traffic from outside the container.
-- CPU is enough for Whisper-tiny plus the linear pause head; no GPU flag is required.
+- Keep `HOST=0.0.0.0` so traffic from outside the container is accepted.
+- CPU is enough; no GPU flag required.

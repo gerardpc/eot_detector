@@ -60,7 +60,8 @@ Browser (turn_ui) or POST /infer client
 
 `GET /health` returns 503 until lifespan finishes. With `LOAD_MODEL=true`
 (the default), missing Whisper weights fail startup. Tests pass
-`Settings(load_model=False)` so the app comes up without GPU weights.
+`Settings(load_model=False)` so the app comes up without loading Whisper or
+pause-head weights.
 
 `app.state.ready` is the HTTP gate. It means the encoder path completed or was
 skipped, not that a given pause head has been warmed.
@@ -69,5 +70,5 @@ skipped, not that a given pause head has been warmed.
 
 See [`settings/settings.py`](settings/settings.py) and the repo-root
 [`.env.example`](../../../../.env.example). Main knobs: `HOST`, `PORT`,
-`CORS_ALLOWED_ORIGINS`, `LOAD_MODEL`, `WHISPER_MODEL_DIR`, `PAUSE_HEAD_DIR`,
-`LOG_LEVEL`.
+`CORS_ALLOWED_ORIGINS` (comma-separated origins, or `*`), `LOAD_MODEL`,
+`WHISPER_MODEL_DIR`, `PAUSE_HEAD_DIR`, `LOG_LEVEL`.

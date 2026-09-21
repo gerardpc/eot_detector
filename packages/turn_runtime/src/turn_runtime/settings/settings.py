@@ -2,9 +2,10 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from turn_runtime.classifier import DEFAULT_HEAD_DIR, DEFAULT_MODEL_DIR
 
@@ -20,7 +21,8 @@ class Settings(BaseSettings):
         "End-of-turn detection on human audio: energy VAD, frozen Whisper-tiny, pause head."
     )
     """Application description exposed by FastAPI."""
-    cors_allowed_origins: list[str] = Field(
+    # NoDecode: env is a comma-separated string (or "*"), not JSON.
+    cors_allowed_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "http://127.0.0.1:8765",
             "http://localhost:8765",

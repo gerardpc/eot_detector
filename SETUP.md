@@ -26,7 +26,8 @@ uv run --package turn-ui turn-ui
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765) and click **Start listening**.
 The page defaults to the runtime at [http://127.0.0.1:8766](http://127.0.0.1:8766)
 (`RUNTIME_URL`, overridable on the page). The runtime loads Whisper-tiny and
-`current` at startup. The Head menu lists runs under `models/pause_head/`.
+`models/pause_head/current` at startup. The **ML Model** menu lists runs under
+`models/pause_head/`.
 
 To point the UI at a container, set `RUNTIME_URL` or the Model API IP field to
 `http://<host>:<port>` (see [Docker](#docker)). How the two processes
@@ -100,14 +101,22 @@ Each `eot-train` writes a **new** `models/pause_head/<run_id>/` folder
 run directories. By default it retargets the `current` symlink at the new
 run. To keep serving the previous head, pass `--no-promote`.
 
+Default `eot-train` is a **linear** `384 → 1` head with a **tail** pool over
+the last **1 s** of encoder frames (~50 steps at 50 Hz). Shorter clips use
+whatever frames they have. Pool modes: `mean`, `tail`, `ema` (see
+`--pool` / `--pool-ms`).
+
 ```bash
+# Default recipe (linear + tail 1 s); keep previous current:
 uv run --package eot-ml-core eot-train --head linear --pool tail --pool-ms 1000 --epochs 100 --no-promote
+
+# Same shape as the Docker bake (linear + EMA 400 ms):
+uv run --package eot-ml-core eot-train --head linear --pool ema --pool-ms 400 --epochs 100 --no-promote
 ```
 
-The training recipe is a **linear** `384 → 1` head on a **tail pool**: mean of
-the last **1 s** of encoder frames (~50 steps at 50 Hz). Shorter clips use
-whatever frames they have. `--no-promote` keeps `current` on the previous
-run. Pick the new run in the Head menu, or point `current` at it later.
+`--no-promote` leaves `current` alone. Pick the new run in the ML Model menu,
+or point `current` at it later. The Docker image does **not** follow your local
+`current`; it pins run `20260921-084831` (Linear, EMA 400 ms).
 
 Clip labels and the train/val split are described in
 [`ARCHITECTURE.md`](ARCHITECTURE.md#dataset).
@@ -125,18 +134,20 @@ flowchart LR
 ## Docker
 
 A standalone image for `turn-runtime` lives in
-[`docker/turn_runtime`](docker/turn_runtime/README.md). It bakes Whisper-tiny
-and `models/pause_head/current/best.pt` into the image. Do not build until the
-encoder snapshot and a trained `current` head exist on disk.
+[`docker/turn_runtime`](docker/turn_runtime/README.md). It copies Whisper-tiny
+and `models/pause_head/20260921-084831/` (Linear, EMA 400 ms) into
+`/models/pause_head/current/` in the image. Plain `eot-train` does not create
+that run; use the folder already on disk, or train with
+`--pool ema --pool-ms 400` as above.
 
 ```bash
 docker build -t eot-runtime:local -f docker/turn_runtime/Dockerfile .
 docker run --rm -p 8766:8766 eot-runtime:local
 ```
 
-Then run `turn-ui` as usual and set Model API IP to `http://127.0.0.1:8766` (or the
+Then run `turn-ui` and set Model API IP to `http://127.0.0.1:8766` (or the
 machine IP if the UI is elsewhere). The image listens on `0.0.0.0:8766` and
-allows any browser origin.
+sets `CORS_ALLOWED_ORIGINS=*`.
 
 ## Development
 

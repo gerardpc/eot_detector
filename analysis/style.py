@@ -11,7 +11,7 @@ RUNS = [
 ]
 
 TARGET_RUN = "Linear, tail 400 ms"
-"""The pause head we are keeping for serving and language breakdowns."""
+"""Run used for the per-language accuracy chart (not the Docker bake)."""
 
 LANG_NAMES = {
     "ar": "Arabic",

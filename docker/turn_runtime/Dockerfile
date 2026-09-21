@@ -17,7 +17,7 @@ COPY packages/turn_runtime/pyproject.toml /app/packages/turn_runtime/pyproject.t
 COPY packages/turn_ui/pyproject.toml /app/packages/turn_ui/pyproject.toml
 COPY packages/ml_core/pyproject.toml /app/packages/ml_core/pyproject.toml
 
-# Whisper-tiny + a tiny MLP; CPU wheels are enough for a standalone image.
+# Whisper-tiny + linear pause head; CPU wheels are enough.
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 ENV UV_TORCH_BACKEND=cpu
@@ -27,11 +27,11 @@ RUN uv sync --frozen --no-dev --package turn-runtime --no-install-workspace --no
 COPY packages/turn_runtime/src /app/packages/turn_runtime/src
 RUN uv sync --frozen --no-dev --package turn-runtime --no-cache --compile-bytecode
 
-# Bake the frozen encoder and the current best pause head. `current` is a
-# symlink on the host; Docker copies the resolved files.
+# Bake the frozen encoder and the Linear EMA 400 ms pause head
+# (models/pause_head/20260921-084831) as `current`.
 COPY models/whisper-tiny /models/whisper-tiny
-COPY models/pause_head/current/best.pt /models/pause_head/current/best.pt
-COPY models/pause_head/current/config.json /models/pause_head/current/config.json
+COPY models/pause_head/20260921-084831/best.pt /models/pause_head/current/best.pt
+COPY models/pause_head/20260921-084831/config.json /models/pause_head/current/config.json
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV HOST=0.0.0.0
