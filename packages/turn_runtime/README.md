@@ -3,10 +3,12 @@
 Live end-of-turn runtime (`turn-runtime`).
 
 Speech vs silence is energy VAD (20 ms frames, 100 ms minimum silence). During a
-pause the runtime encodes the last ≤ 5 s with a frozen Whisper-tiny encoder and
-scores `p(eot)` with a small MLP (`384 → 64 → GELU → 1`). `p(eot) ≥ 0.5` is
-`eot`; otherwise `hold`. After 3 s of silence, `eot` is forced without calling
-the head.
+pause the runtime encodes the last ≤ 5 s with a frozen Whisper-tiny encoder,
+mean-pools the last **1 s** of encoder frames, and scores `p(eot)` with a
+linear `384 → 1` head. By default `p(eot) ≥ 0.5` is `eot`; otherwise `hold`.
+The live WebSocket session can override that cutoff anywhere in `[0, 1]`
+(`start.threshold` or `{type:"threshold", value}`). After 3 s of silence,
+`eot` is forced without calling the head.
 
 The encoder is `models/whisper-tiny/`. The head is
 `models/pause_head/current/best.pt`, then `latest.pt` if `best.pt` is missing.
@@ -47,10 +49,11 @@ uv run --package turn-runtime turn-runtime-stress
 uv run --package turn-runtime turn-runtime-stress --url http://127.0.0.1:8766
 ```
 
-Needs `eot-prepare`. Sweeps offered clip scores per second (`--rps`,
-default `1,2,4,8,max`) and writes `data/stress_tests/<datetime>/report.md`
-with latency-distribution and throughput plots. `--url` hits `POST /infer`;
-the default scores in-process. Details: [`SETUP.md`](../../SETUP.md#encoder-throughput).
+Needs `eot-prepare`. After a 2 s discarded warmup, sweeps offered clip
+scores per second (`--rps`, default `1,2,4,8,max`) and writes
+`data/stress_tests/<datetime>/report.md` with latency-distribution and
+throughput plots. `--url` hits `POST /infer`; the default scores
+in-process. Details: [`SETUP.md`](../../SETUP.md#encoder-throughput).
 
 ## Layout
 

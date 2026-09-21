@@ -55,12 +55,17 @@ async def stream_state(websocket: WebSocket) -> None:
                     if runner.select_head(head_id) is None:
                         await websocket.send_json({"ok": False, "error": "pause head not found"})
                         continue
+                    if "threshold" in payload:
+                        runner.set_threshold(payload.get("threshold"))
                     await websocket.send_json({"ok": True, "turn": turn_status(websocket, runner)})
                 elif kind == "head":
                     head_id = str(payload.get("id") or payload.get("head") or "current")
                     if runner.select_head(head_id) is None:
                         await websocket.send_json({"ok": False, "error": "pause head not found"})
                         continue
+                    await websocket.send_json({"ok": True, "turn": turn_status(websocket, runner)})
+                elif kind == "threshold":
+                    runner.set_threshold(payload.get("value", payload.get("threshold", 0.5)))
                     await websocket.send_json({"ok": True, "turn": turn_status(websocket, runner)})
                 continue
             raw = message.get("bytes")

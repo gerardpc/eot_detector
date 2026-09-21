@@ -42,7 +42,7 @@ RUNTIME_URL=http://127.0.0.1:8766 uv run --package turn-ui turn-ui
 
 If the UI runs on another machine, use the host’s reachable IP instead of
 `127.0.0.1`, for example `http://192.168.1.10:8766`. You can also type that
-origin into the Runtime field on the page without restarting the UI.
+origin into the Model API IP field on the page without restarting the UI.
 
 The image sets `CORS_ALLOWED_ORIGINS=*` so any browser origin can call `/heads`
 and `/ws`. Override if you want a tighter list:
@@ -75,4 +75,4 @@ docker run --rm -p 8766:8766 \
 - Publish port `8766` (or set `PORT` and map that).
 - Give clients `http://<host>:<port>` as `RUNTIME_URL`.
 - Keep `HOST=0.0.0.0` so the process accepts traffic from outside the container.
-- CPU is enough for Whisper-tiny plus the ~25k-param head; no GPU flag is required.
+- CPU is enough for Whisper-tiny plus the linear pause head; no GPU flag is required.

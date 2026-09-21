@@ -1,0 +1,164 @@
+{
+  "run": "Linear, tail 400 ms",
+  "run_id": "20260921-084027",
+  "checkpoint": "best.pt",
+  "threshold": 0.5,
+  "n_val": 6006,
+  "overall_acc": 0.8767898767898767,
+  "median_acc": 0.8795921361502348,
+  "english": {
+    "code": "en",
+    "name": "English",
+    "n": 483,
+    "n_hold": 249,
+    "n_eot": 234,
+    "correct": 440,
+    "acc": 0.9109730848861284
+  },
+  "best": {
+    "code": "ja",
+    "name": "Japanese",
+    "n": 487,
+    "n_hold": 297,
+    "n_eot": 190,
+    "correct": 451,
+    "acc": 0.9260780287474333
+  },
+  "worst": {
+    "code": "pt",
+    "name": "Portuguese",
+    "n": 452,
+    "n_hold": 249,
+    "n_eot": 203,
+    "correct": 372,
+    "acc": 0.8230088495575221
+  },
+  "languages": [
+    {
+      "code": "pt",
+      "name": "Portuguese",
+      "n": 452,
+      "n_hold": 249,
+      "n_eot": 203,
+      "correct": 372,
+      "acc": 0.8230088495575221
+    },
+    {
+      "code": "hi",
+      "name": "Hindi",
+      "n": 430,
+      "n_hold": 236,
+      "n_eot": 194,
+      "correct": 355,
+      "acc": 0.8255813953488372
+    },
+    {
+      "code": "id",
+      "name": "Indonesian",
+      "n": 436,
+      "n_hold": 271,
+      "n_eot": 165,
+      "correct": 363,
+      "acc": 0.8325688073394495
+    },
+    {
+      "code": "nl",
+      "name": "Dutch",
+      "n": 343,
+      "n_hold": 163,
+      "n_eot": 180,
+      "correct": 294,
+      "acc": 0.8571428571428571
+    },
+    {
+      "code": "ar",
+      "name": "Arabic",
+      "n": 402,
+      "n_hold": 194,
+      "n_eot": 208,
+      "correct": 348,
+      "acc": 0.8656716417910447
+    },
+    {
+      "code": "it",
+      "name": "Italian",
+      "n": 369,
+      "n_hold": 167,
+      "n_eot": 202,
+      "correct": 320,
+      "acc": 0.8672086720867209
+    },
+    {
+      "code": "zh",
+      "name": "Chinese",
+      "n": 426,
+      "n_hold": 256,
+      "n_eot": 170,
+      "correct": 374,
+      "acc": 0.8779342723004695
+    },
+    {
+      "code": "tr",
+      "name": "Turkish",
+      "n": 480,
+      "n_hold": 244,
+      "n_eot": 236,
+      "correct": 423,
+      "acc": 0.88125
+    },
+    {
+      "code": "fr",
+      "name": "French",
+      "n": 433,
+      "n_hold": 191,
+      "n_eot": 242,
+      "correct": 386,
+      "acc": 0.8914549653579676
+    },
+    {
+      "code": "es",
+      "name": "Spanish",
+      "n": 452,
+      "n_hold": 252,
+      "n_eot": 200,
+      "correct": 405,
+      "acc": 0.8960176991150443
+    },
+    {
+      "code": "de",
+      "name": "German",
+      "n": 536,
+      "n_hold": 330,
+      "n_eot": 206,
+      "correct": 484,
+      "acc": 0.9029850746268657
+    },
+    {
+      "code": "ko",
+      "name": "Korean",
+      "n": 277,
+      "n_hold": 89,
+      "n_eot": 188,
+      "correct": 251,
+      "acc": 0.9061371841155235
+    },
+    {
+      "code": "en",
+      "name": "English",
+      "n": 483,
+      "n_hold": 249,
+      "n_eot": 234,
+      "correct": 440,
+      "acc": 0.9109730848861284
+    },
+    {
+      "code": "ja",
+      "name": "Japanese",
+      "n": 487,
+      "n_hold": 297,
+      "n_eot": 190,
+      "correct": 451,
+      "acc": 0.9260780287474333
+    }
+  ]
+}

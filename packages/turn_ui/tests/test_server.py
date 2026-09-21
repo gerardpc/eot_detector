@@ -10,16 +10,27 @@ def test_index_and_health() -> None:
     page = client.get("/")
     assert page.status_code == 200
     html = page.text
-    assert "End of turn" in html
+    assert "End of turn detector" in html
     assert "state probability" in html
+    assert "Model API IP" in html
+    assert "ML Model" in html
+    assert "Architecture" in html
+    assert 'id="model-meta"' in html
     assert 'id="head"' in html
     assert 'id="runtime-url"' in html
+    assert 'id="flow"' in html
     assert "DEFAULT_RUNTIME_URL" in html
     assert "Speaking" in html
     assert "Hold" in html
     assert "EOT" in html
     assert "DualTurn" not in html
     assert "Listen for the handoff" not in html
+    assert "Idle." not in html
+    assert "Detection threshold" in html
+    assert 'id="threshold"' in html
+    assert "type: 'threshold'" in html
+    assert "Oswald" not in html
+    assert "Roboto" in html
     assert 'id="timeline"' in html
     assert "__RUNTIME_URL__" not in html
     assert "http://127.0.0.1:8766" in html

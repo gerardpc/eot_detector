@@ -17,3 +17,6 @@ models/
 .env.*
 !.env.example
 
+# Presentation deck (local only).
+slides/
+

@@ -36,7 +36,39 @@ def test_run_config_roundtrip(tmp_path: Path) -> None:
     assert loaded.tensorboard_dir == "tb"
     assert loaded.eval_every_samples == 3000
     assert loaded.head == "linear-64-gelu-linear"
+    assert loaded.pool == "mean"
+    assert loaded.pool_ms == 1000.0
     assert loaded.weight_decay == 1e-3
+
+
+def test_run_config_accepts_linear_head(tmp_path: Path) -> None:
+    config = PauseHeadRunConfig(
+        run_id="linear",
+        dataset_dir=str(tmp_path),
+        epochs=100,
+        batch_size=32,
+        lr=1e-3,
+        head="linear",
+        pool="tail",
+        pool_ms=1000,
+    )
+    assert config.head == "linear"
+    assert config.pool == "tail"
+    assert config.pool_ms == 1000.0
+
+
+def test_run_config_accepts_ema_pool(tmp_path: Path) -> None:
+    config = PauseHeadRunConfig(
+        run_id="ema",
+        dataset_dir=str(tmp_path),
+        epochs=100,
+        batch_size=32,
+        lr=1e-3,
+        head="linear",
+        pool="ema",
+        pool_ms=400,
+    )
+    assert config.pool == "ema"
 
 
 def test_promote_run_symlink(tmp_path: Path) -> None:

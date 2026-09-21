@@ -130,3 +130,30 @@ def test_speech_after_forced_eot_classifies_again() -> None:
     event = runner.consume_stream(pause, 16_000)
     assert event.state == "hold"
     assert event.p_eot == 0.2
+
+
+def test_low_threshold_marks_eot() -> None:
+    runner = TurnRunner(load_classifier=True)
+    runner._classifier = type("Classifier", (), {"p_eot": staticmethod(lambda *_args: 0.4)})()
+    runner.set_threshold(0.3)
+    event = runner.consume_stream(np.zeros(8000, dtype=np.float32), 16_000)
+    assert event.state == "eot"
+    assert event.p_eot == 0.4
+    assert runner.status()["eot_threshold"] == 0.3
+
+
+def test_high_threshold_keeps_hold() -> None:
+    runner = TurnRunner(load_classifier=True)
+    runner._classifier = type("Classifier", (), {"p_eot": staticmethod(lambda *_args: 0.6)})()
+    runner.set_threshold(0.8)
+    event = runner.consume_stream(np.zeros(8000, dtype=np.float32), 16_000)
+    assert event.state == "hold"
+    assert event.p_eot == 0.6
+    assert runner.status()["eot_threshold"] == 0.8
+
+
+def test_set_threshold_clamps_to_unit_interval() -> None:
+    runner = TurnRunner()
+    assert runner.set_threshold(-1) == 0.0
+    assert runner.set_threshold(2) == 1.0
+    assert runner.set_threshold("nope") == 0.5

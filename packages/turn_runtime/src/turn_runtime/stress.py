@@ -35,13 +35,15 @@ DEFAULT_TRAIN_DIR = Path(__file__).resolve().parents[4] / "data" / "train_datase
 DEFAULT_OUTPUT_ROOT = Path(__file__).resolve().parents[4] / "data" / "stress_tests"
 """Parent directory for timestamped report folders."""
 DEFAULT_SECONDS = 10.0
-"""How long each offered-rate stage lasts when `--seconds` is omitted."""
+"""How long each offered-rate *measurement* stage lasts when `--seconds` is omitted."""
+DEFAULT_WARMUP_SECONDS = 2.0
+"""Closed-loop scoring before the first measured stage; those clips are discarded."""
 DEFAULT_CLIPS = 128
 """How many training WAVs to preload when `--clips` is omitted."""
 DEFAULT_WORKERS = 8
 """Max in-flight scores. The encoder lock still serializes the forward."""
 DEFAULT_RPS = "1,2,4,8,max"
-"""Offered rates; `max` is a closed-loop saturation stage."""
+"""Offered rates in req/s; `max` is a closed-loop saturation stage."""
 
 
 def _train_index(root: Path) -> Path:
@@ -156,34 +158,40 @@ def _score_http(url: str, wav_bytes: bytes) -> dict[str, object]:
 
 @dataclass
 class StageResult:
-    """Latency samples and throughput for one offered-rate stage."""
+    """Throughput and latency for one *measured* offered-rate stage (warmup excluded)."""
 
     label: str
     offered_rps: float | None
+    """Target start rate in req/s, or None for closed-loop `max`."""
     achieved_rps: float
+    """Completed scores per second: `n_scored / duration_s`."""
     workers: int
-    forwards: int
-    seconds: float
-    wall_ms: list[float] = field(default_factory=list)
-    encoder_ms: list[float] = field(default_factory=list)
+    n_scored: int
+    """Clip scores that finished in the measurement window."""
+    duration_s: float
+    """Measurement-window wall time in seconds."""
+    client_ms: list[float] = field(default_factory=list)
+    """Client wall time per score in milliseconds (HTTP + queue + model)."""
+    encoder_lock_ms: list[float] = field(default_factory=list)
+    """Encoder + pause head, including infer-lock wait, in milliseconds."""
 
     def stats(self) -> dict[str, object]:
-        """JSON-safe summary without the raw sample lists."""
+        """JSON-safe summary without the raw sample lists. Keys include units."""
         return {
             "label": self.label,
             "offered_rps": self.offered_rps,
             "achieved_rps": round(self.achieved_rps, 3),
             "workers": self.workers,
-            "forwards": self.forwards,
-            "seconds": round(self.seconds, 3),
-            "latency_ms_mean": round(_mean(self.wall_ms), 2),
-            "latency_ms_p50": round(_percentile(self.wall_ms, 50), 2),
-            "latency_ms_p95": round(_percentile(self.wall_ms, 95), 2),
-            "latency_ms_p99": round(_percentile(self.wall_ms, 99), 2),
-            "encoder_latency_ms_mean": round(_mean(self.encoder_ms), 2),
-            "encoder_latency_ms_p50": round(_percentile(self.encoder_ms, 50), 2),
-            "encoder_latency_ms_p95": round(_percentile(self.encoder_ms, 95), 2),
-            "encoder_latency_ms_p99": round(_percentile(self.encoder_ms, 99), 2),
+            "n_scored": self.n_scored,
+            "duration_s": round(self.duration_s, 3),
+            "client_latency_ms_mean": round(_mean(self.client_ms), 2),
+            "client_latency_ms_p50": round(_percentile(self.client_ms, 50), 2),
+            "client_latency_ms_p95": round(_percentile(self.client_ms, 95), 2),
+            "client_latency_ms_p99": round(_percentile(self.client_ms, 99), 2),
+            "encoder_lock_ms_mean": round(_mean(self.encoder_lock_ms), 2),
+            "encoder_lock_ms_p50": round(_percentile(self.encoder_lock_ms, 50), 2),
+            "encoder_lock_ms_p95": round(_percentile(self.encoder_lock_ms, 95), 2),
+            "encoder_lock_ms_p99": round(_percentile(self.encoder_lock_ms, 99), 2),
         }
 
 
@@ -205,10 +213,14 @@ def run_stage(
     seconds: float,
     workers: int,
 ) -> StageResult:
-    """Run one offered-rate stage against preloaded clips."""
+    """Run one offered-rate stage against preloaded clips.
+
+    Completions in this call are recorded. Callers that want a warmup should
+    invoke this separately and discard the `StageResult`.
+    """
 
     def _one(index: int) -> tuple[float, float]:
-        """Score one clip; return (client wall ms, encoder latency ms)."""
+        """Score one clip; return (client ms, encoder+lock ms)."""
         pcm, sample_rate, wav_bytes = waveforms[index % len(waveforms)]
         started = time.perf_counter()
         if classifier is not None:
@@ -223,8 +235,8 @@ def run_stage(
         return elapsed_ms, encoder_latency
 
     n_workers = max(1, workers)
-    wall_ms: list[float] = []
-    encoder_ms: list[float] = []
+    client_ms: list[float] = []
+    encoder_lock_ms: list[float] = []
     started = time.perf_counter()
     deadline = started + seconds
     interval = None if offered_rps is None else 1.0 / offered_rps
@@ -258,20 +270,20 @@ def run_stage(
             done, pending_f = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
             pending = set(pending_f)
             for future in done:
-                client_ms, model_ms = future.result()
-                wall_ms.append(client_ms)
-                encoder_ms.append(model_ms)
+                wall_ms, model_ms = future.result()
+                client_ms.append(wall_ms)
+                encoder_lock_ms.append(model_ms)
 
-    wall = max(time.perf_counter() - started, 1e-9)
+    duration_s = max(time.perf_counter() - started, 1e-9)
     return StageResult(
         label=rps_label(offered_rps),
         offered_rps=offered_rps,
-        achieved_rps=len(wall_ms) / wall,
+        achieved_rps=len(client_ms) / duration_s,
         workers=n_workers,
-        forwards=len(wall_ms),
-        seconds=wall,
-        wall_ms=wall_ms,
-        encoder_ms=encoder_ms,
+        n_scored=len(client_ms),
+        duration_s=duration_s,
+        client_ms=client_ms,
+        encoder_lock_ms=encoder_lock_ms,
     )
 
 
@@ -284,8 +296,11 @@ def run_stress(
     seed: int,
     url: str | None,
     rps: list[float | None],
+    warmup_seconds: float = DEFAULT_WARMUP_SECONDS,
 ) -> StressRun:
-    """Load training clips once, then run one stage per offered rate."""
+    """Load clips, warmup the encoder, then measure one stage per offered rate."""
+    if warmup_seconds < 0:
+        raise ValueError(f"warmup_seconds must be >= 0, got {warmup_seconds}")
     paths = load_clip_paths(dataset_dir, clips, seed)
     waveforms = load_waveforms(paths)
     lock = threading.Lock()
@@ -293,10 +308,26 @@ def run_stress(
     if url is None:
         _ensure_encoder()
         classifier = PauseClassifier(load_trained_head=True)
+    if warmup_seconds > 0:
+        _logger.info(
+            "warmup seconds=%s workers=%s (closed-loop, not recorded)",
+            warmup_seconds,
+            max(1, workers),
+        )
+        run_stage(
+            waveforms=waveforms,
+            classifier=classifier,
+            lock=lock,
+            url=url,
+            offered_rps=None,
+            seconds=warmup_seconds,
+            workers=workers,
+        )
+        _logger.info("warmup done; starting measured stages")
     stages: list[StageResult] = []
     for offered in rps:
         _logger.info(
-            "starting stage offered_rps=%s workers=%s seconds=%s",
+            "starting stage offered_rps=%s workers=%s duration_s=%s",
             rps_label(offered),
             max(1, workers),
             seconds,
@@ -311,13 +342,13 @@ def run_stress(
             workers=workers,
         )
         _logger.info(
-            "finished stage offered_rps=%s achieved_rps=%.3f forwards=%s "
-            "latency_ms_p50=%.2f encoder_latency_ms_p50=%.2f",
+            "finished stage offered_rps=%s achieved_rps=%.3f n_scored=%s "
+            "client_latency_ms_p50=%.2f encoder_lock_ms_p50=%.2f",
             stage.label,
             stage.achieved_rps,
-            stage.forwards,
-            _percentile(stage.wall_ms, 50),
-            _percentile(stage.encoder_ms, 50),
+            stage.n_scored,
+            _percentile(stage.client_ms, 50),
+            _percentile(stage.encoder_lock_ms, 50),
         )
         stages.append(stage)
     device = str(getattr(classifier, "device", "http")) if classifier is not None else "http"
@@ -328,6 +359,7 @@ def run_stress(
         "dataset_dir": str(dataset_dir),
         "clips_preloaded": len(waveforms),
         "workers": max(1, workers),
+        "warmup_seconds": warmup_seconds,
         "seconds_per_stage": seconds,
         "seed": seed,
         "rps": [rps_label(value) for value in rps],
@@ -349,17 +381,17 @@ def _plot_latency_distribution(stages: list[StageResult], path: Path) -> None:
     """Box plots of encoder latency, one box per offered rate."""
     plt = _pyplot()
     fig, ax = plt.subplots(figsize=(9, 4.5))
-    data = [stage.encoder_ms for stage in stages if stage.encoder_ms]
-    labels = [stage.label for stage in stages if stage.encoder_ms]
+    data = [stage.encoder_lock_ms for stage in stages if stage.encoder_lock_ms]
+    labels = [stage.label for stage in stages if stage.encoder_lock_ms]
     if not data:
         ax.set_title("No latency samples")
     else:
         ax.boxplot(data, positions=list(range(1, len(data) + 1)), showfliers=True)
         ax.set_xticks(list(range(1, len(data) + 1)))
         ax.set_xticklabels(labels)
-        ax.set_xlabel("Offered RPS (`max` = closed-loop saturation)")
-        ax.set_ylabel("Encoder latency (ms)")
-        ax.set_title("Encoder latency distribution per offered RPS")
+        ax.set_xlabel("Offered rate (req/s); `max` = closed-loop saturation")
+        ax.set_ylabel("Encoder+lock latency (ms)")
+        ax.set_title("Encoder+lock latency per offered rate")
         ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(path, dpi=140)
@@ -380,8 +412,8 @@ def _plot_throughput(stages: list[StageResult], path: Path) -> None:
     saturate = next((stage for stage in stages if stage.offered_rps is None), None)
     if saturate is not None:
         ax.axhline(saturate.achieved_rps, color="C1", linestyle=":", label="max achieved")
-    ax.set_xlabel("Offered RPS")
-    ax.set_ylabel("Achieved forwards / s")
+    ax.set_xlabel("Offered rate (req/s)")
+    ax.set_ylabel("Achieved rate (req/s)")
     ax.set_title("Throughput")
     ax.grid(alpha=0.3)
     ax.legend()
@@ -391,16 +423,16 @@ def _plot_throughput(stages: list[StageResult], path: Path) -> None:
     p50: list[float] = []
     p99: list[float] = []
     for stage in stages:
-        if not stage.encoder_ms:
+        if not stage.encoder_lock_ms:
             continue
         x_p50.append(stage.offered_rps if stage.offered_rps is not None else stage.achieved_rps)
-        p50.append(_percentile(stage.encoder_ms, 50))
-        p99.append(_percentile(stage.encoder_ms, 99))
+        p50.append(_percentile(stage.encoder_lock_ms, 50))
+        p99.append(_percentile(stage.encoder_lock_ms, 99))
     if x_p50:
         ax.plot(x_p50, p50, marker="o", label="p50")
         ax.plot(x_p50, p99, marker="o", label="p99")
-    ax.set_xlabel("Offered RPS (`max` plotted at achieved)")
-    ax.set_ylabel("Encoder latency (ms)")
+    ax.set_xlabel("Offered rate (req/s); `max` plotted at achieved")
+    ax.set_ylabel("Encoder+lock latency (ms)")
     ax.set_title("Latency vs rate")
     ax.grid(alpha=0.3)
     ax.legend()
@@ -410,11 +442,11 @@ def _plot_throughput(stages: list[StageResult], path: Path) -> None:
 
 
 def _markdown_table(stages: list[StageResult]) -> str:
-    """Render the summary table for `report.md`."""
+    """Render the summary table for `report.md`. Every column includes units."""
     header = (
-        "| offered rps | achieved rps | forwards | seconds |"
-        " latency p50 (ms) | latency p95 | latency p99 |"
-        " encoder p50 (ms) | encoder p99 |"
+        "| offered (req/s) | achieved (req/s) | scored (n) | duration (s) |"
+        " client p50 (ms) | client p95 (ms) | client p99 (ms) |"
+        " encoder+lock p50 (ms) | encoder+lock p99 (ms) |"
     )
     sep = "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     rows = [header, sep]
@@ -422,12 +454,33 @@ def _markdown_table(stages: list[StageResult]) -> str:
         stats = stage.stats()
         offered = stats["label"]
         rows.append(
-            f"| {offered} | {stats['achieved_rps']} | {stats['forwards']} |"
-            f" {stats['seconds']} | {stats['latency_ms_p50']} |"
-            f" {stats['latency_ms_p95']} | {stats['latency_ms_p99']} |"
-            f" {stats['encoder_latency_ms_p50']} | {stats['encoder_latency_ms_p99']} |"
+            f"| {offered} | {stats['achieved_rps']} | {stats['n_scored']} |"
+            f" {stats['duration_s']} | {stats['client_latency_ms_p50']} |"
+            f" {stats['client_latency_ms_p95']} | {stats['client_latency_ms_p99']} |"
+            f" {stats['encoder_lock_ms_p50']} | {stats['encoder_lock_ms_p99']} |"
         )
     return "\n".join(rows)
+
+
+_COLUMN_HELP = """
+### Columns
+
+Rates are **clip scores per second** (req/s). Times are milliseconds (ms)
+or seconds (s). Counts are `(n)`. Warmup clips are not in this table.
+
+- **offered (req/s)** — How many scores the client *tries to start* each
+  second. `max` means keep `--workers` busy (no target rate).
+- **achieved (req/s)** — How many scores actually *finished* per second:
+  scored / duration.
+- **scored (n)** — Clip scores completed in this measurement window.
+- **duration (s)** — Wall time of the measurement window.
+- **client p50/p95/p99 (ms)** — Client clock from send to response.
+  Includes HTTP, JSON, and waiting for a free worker. p50 is the median;
+  p99 is the slow tail.
+- **encoder+lock p50/p99 (ms)** — Server `/infer` `latency_ms`: Whisper
+  encoder + pause head, including wait on the shared infer lock. Same as
+  client latency for in-process runs.
+""".strip()
 
 
 def write_report(run: StressRun, output_dir: Path) -> Path:
@@ -441,18 +494,23 @@ def write_report(run: StressRun, output_dir: Path) -> Path:
     with samples_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["label", "offered_rps", "latency_ms", "encoder_latency_ms"],
+            fieldnames=[
+                "label",
+                "offered_rps",
+                "client_latency_ms",
+                "encoder_lock_ms",
+            ],
         )
         writer.writeheader()
         for stage in run.stages:
             offered = "" if stage.offered_rps is None else stage.offered_rps
-            for wall, encoder in zip(stage.wall_ms, stage.encoder_ms, strict=True):
+            for client_ms, encoder_ms in zip(stage.client_ms, stage.encoder_lock_ms, strict=True):
                 writer.writerow(
                     {
                         "label": stage.label,
                         "offered_rps": offered,
-                        "latency_ms": round(wall, 3),
-                        "encoder_latency_ms": round(encoder, 3),
+                        "client_latency_ms": round(client_ms, 3),
+                        "encoder_lock_ms": round(encoder_ms, 3),
                     }
                 )
     summary = {
@@ -465,6 +523,7 @@ def write_report(run: StressRun, output_dir: Path) -> Path:
     device = run.meta.get("device")
     clips = run.meta.get("clips_preloaded")
     seconds = run.meta.get("seconds_per_stage")
+    warmup = run.meta.get("warmup_seconds")
     report = "\n".join(
         [
             f"# Encoder stress {started_at}".rstrip(),
@@ -473,30 +532,27 @@ def write_report(run: StressRun, output_dir: Path) -> Path:
             f"- Device: `{device}`",
             f"- URL: `{run.meta.get('url')}`",
             f"- Clips preloaded: {clips}",
-            f"- Seconds per offered rate: {seconds}",
+            f"- Warmup: {warmup} s closed-loop (discarded, not in the table)",
+            f"- Measurement window per offered rate: {seconds} s",
             f"- Workers (max in-flight): {run.meta.get('workers')}",
             f"- Dataset: `{run.meta.get('dataset_dir')}`",
             "",
-            "Offered RPS is how many clip scores we *try* to start each second.",
-            "`max` keeps `--workers` busy (closed-loop saturation). Achieved RPS is",
-            "completed forwards divided by wall time. `latency_ms` is client-side",
-            "(including queueing). `encoder_latency_ms` is the `/infer` `latency_ms`",
-            "field, or the same as client latency for in-process runs.",
+            _COLUMN_HELP,
             "",
             "## Summary",
             "",
             _markdown_table(run.stages),
             "",
-            "## Latency distribution per offered RPS",
+            "## Latency distribution per offered rate",
             "",
-            "![Encoder latency box plots](latency_distribution.png)",
+            "![Encoder+lock latency box plots](latency_distribution.png)",
             "",
             "## Throughput and percentiles",
             "",
-            "![Throughput and latency vs RPS](throughput.png)",
+            "![Throughput and latency vs rate](throughput.png)",
             "",
-            "Raw samples: [`samples.csv`](samples.csv). Machine-readable summary:",
-            "[`summary.json`](summary.json).",
+            "Raw samples (measurement window only): [`samples.csv`](samples.csv).",
+            "Machine-readable summary: [`summary.json`](summary.json).",
             "",
         ]
     )
@@ -529,7 +585,16 @@ def main() -> None:
         "--seconds",
         type=float,
         default=DEFAULT_SECONDS,
-        help="Wall time per offered-rate stage.",
+        help="Measurement window per offered rate, in seconds (after warmup).",
+    )
+    parser.add_argument(
+        "--warmup-seconds",
+        type=float,
+        default=DEFAULT_WARMUP_SECONDS,
+        help=(
+            "Closed-loop scoring before the first measured stage, in seconds. "
+            "Those clips are discarded. 0 disables warmup."
+        ),
     )
     parser.add_argument("--clips", type=int, default=DEFAULT_CLIPS)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
@@ -537,7 +602,7 @@ def main() -> None:
     parser.add_argument(
         "--rps",
         default=DEFAULT_RPS,
-        help='Comma-separated offered rates; include "max" for saturation.',
+        help='Comma-separated offered rates in req/s; include "max" for saturation.',
     )
     parser.add_argument(
         "--url",
@@ -562,6 +627,7 @@ def main() -> None:
         seed=args.seed,
         url=args.url,
         rps=rps,
+        warmup_seconds=args.warmup_seconds,
     )
     run.meta["started_at"] = output_dir.name
     report_path = write_report(run, output_dir)

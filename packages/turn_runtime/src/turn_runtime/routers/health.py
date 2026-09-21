@@ -8,6 +8,7 @@ from turn_runtime import __version__
 from turn_runtime.runtime import (
     CONTEXT_SECONDS,
     ENCODER_ID,
+    EOT_THRESHOLD,
     FORCE_EOT_SECONDS,
     MIN_SILENCE_SECONDS,
 )
@@ -31,6 +32,7 @@ def turn_status(connection: Any, runner: Any | None = None) -> dict[str, object]
             "min_silence_seconds": MIN_SILENCE_SECONDS,
             "force_eot_seconds": FORCE_EOT_SECONDS,
             "context_seconds": CONTEXT_SECONDS,
+            "eot_threshold": EOT_THRESHOLD,
         }
     if classifier is not None:
         status["device"] = str(getattr(classifier, "device", ""))

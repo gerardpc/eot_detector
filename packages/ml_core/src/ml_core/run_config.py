@@ -17,8 +17,12 @@ class PauseHeadRunConfig(BaseModel):
     """UTC timestamp when the run directory was created."""
     encoder_id: str = "openai/whisper-tiny"
     """Frozen encoder identifier used to produce embeddings."""
-    head: str = "linear-64-gelu-linear"
-    """Pause-head architecture name (`384 → 64 → GELU → 1`)."""
+    head: Literal["linear-64-gelu-linear", "linear"] = "linear-64-gelu-linear"
+    """Pause-head architecture (`384 → 64 → GELU → 1`, or a single `384 → 1`)."""
+    pool: Literal["mean", "tail", "ema"] = "mean"
+    """How encoder frames are reduced: uniform mean, last `pool_ms`, or EMA."""
+    pool_ms: float = 1000.0
+    """Window / half-life in milliseconds for `tail` and `ema` (ignored for `mean`)."""
     dataset_id: str = "livekit/eot-bench-data"
     """Source dataset id recorded for the homemade split."""
     dataset_dir: str

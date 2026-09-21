@@ -14,7 +14,16 @@ import soundfile as sf
 import torch
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
-from turn_runtime.classifier import DEFAULT_HEAD_DIR, DEFAULT_MODEL_DIR, HEAD_NAME, PauseClassifier
+from turn_runtime.classifier import (
+    DEFAULT_HEAD_DIR,
+    DEFAULT_MODEL_DIR,
+    DEFAULT_TAIL_MS,
+    HEAD_ARCHITECTURES,
+    HEAD_LINEAR,
+    POOL_MODES,
+    POOL_TAIL,
+    PauseClassifier,
+)
 from turn_runtime.config.logging_setup import setup_logging
 from turn_runtime.download import download_whisper_tiny
 from turn_runtime.runtime import ENCODER_ID
@@ -156,13 +165,15 @@ def _save_checkpoint(
     config: PauseHeadRunConfig,
     *,
     is_best: bool,
+    promote: bool,
 ) -> None:
-    """Write `latest.pt`, optionally `best.pt`, then refresh `current`."""
+    """Write `latest.pt`, optionally `best.pt`, then maybe refresh `current`."""
     classifier.save_head(run_dir / "latest.pt")
     if is_best:
         classifier.save_head(run_dir / "best.pt")
     write_config(run_dir, config)
-    promote_run(run_dir, root)
+    if promote:
+        promote_run(run_dir, root)
 
 
 def train(
@@ -177,6 +188,10 @@ def train(
     split_seed: int | None = None,
     run_id: str | None = None,
     eval_every_samples: int = 3000,
+    head: str = HEAD_LINEAR,
+    pool: str = POOL_TAIL,
+    pool_ms: float = DEFAULT_TAIL_MS,
+    promote: bool = True,
 ) -> Path:
     """Train the pause head, writing a versioned run under `out_dir`."""
     root = dataset_dir or train_dir()
@@ -209,14 +224,21 @@ def train(
     torch.manual_seed(train_seed)
     np.random.seed(train_seed)
 
-    classifier = PauseClassifier(load_trained_head=False)
+    classifier = PauseClassifier(
+        load_trained_head=False,
+        head=head,
+        pool=pool,
+        pool_ms=pool_ms,
+    )
     classifier.encoder.eval()
     classifier.head.train()
     device = classifier.device
     config = PauseHeadRunConfig(
         run_id=run.name,
         encoder_id=ENCODER_ID,
-        head=HEAD_NAME,
+        head=head,
+        pool=pool,
+        pool_ms=pool_ms,
         dataset_id=str(meta.get("dataset_id") or "livekit/eot-bench-data"),
         dataset_dir=str(root),
         hold_label=int(meta.get("hold_label") or 0),
@@ -235,6 +257,11 @@ def train(
     )
     write_config(run, config)
     _logger.info("run directory %s", run)
+    _logger.info("head=%s pool=%s pool_ms=%s", head, pool, pool_ms)
+    if promote:
+        _logger.info("will point %s/current at this run", store)
+    else:
+        _logger.info("leaving %s/current unchanged", store)
     tb_dir = run / config.tensorboard_dir
     writer = SummaryWriter(log_dir=str(tb_dir))
     writer.add_text("config", config.model_dump_json(indent=2), 0)
@@ -296,7 +323,7 @@ def train(
             config.last_train_acc = metrics["train_acc"]
             config.last_val_acc = metrics["val_acc"]
             last_eval_at = samples_seen
-            _save_checkpoint(classifier, run, store, config, is_best=is_best)
+            _save_checkpoint(classifier, run, store, config, is_best=is_best, promote=promote)
             _append_history(
                 run,
                 {
@@ -342,7 +369,7 @@ def train(
         config.status = "interrupted"
         classifier.eval()
         if samples_seen > 0:
-            _save_checkpoint(classifier, run, store, config, is_best=False)
+            _save_checkpoint(classifier, run, store, config, is_best=False, promote=promote)
             _logger.warning("interrupted after %s samples; saved %s", samples_seen, run)
         else:
             write_config(run, config)
@@ -375,6 +402,35 @@ def main() -> None:
     )
     parser.add_argument("--run-id", type=str, default=None)
     parser.add_argument(
+        "--head",
+        choices=HEAD_ARCHITECTURES,
+        default=HEAD_LINEAR,
+        help=(
+            "Pause-head architecture. Default is a single 384→1 layer. "
+            "`linear-64-gelu-linear` is the GELU MLP."
+        ),
+    )
+    parser.add_argument(
+        "--pool",
+        choices=POOL_MODES,
+        default=POOL_TAIL,
+        help=(
+            "Encoder pooling. Default `tail` averages the last --pool-ms "
+            "(1 s). `mean` averages the whole clip. `ema` is recency-weighted."
+        ),
+    )
+    parser.add_argument(
+        "--pool-ms",
+        type=float,
+        default=DEFAULT_TAIL_MS,
+        help="Tail window or EMA half-life in milliseconds (default 1000).",
+    )
+    parser.add_argument(
+        "--no-promote",
+        action="store_true",
+        help="Leave models/pause_head/current pointing at the previous run.",
+    )
+    parser.add_argument(
         "--eval-every",
         type=int,
         default=3000,
@@ -393,6 +449,10 @@ def main() -> None:
         split_seed=args.split_seed,
         run_id=args.run_id,
         eval_every_samples=args.eval_every,
+        head=args.head,
+        pool=args.pool,
+        pool_ms=args.pool_ms,
+        promote=not args.no_promote,
     )
 
 

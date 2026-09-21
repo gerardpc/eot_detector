@@ -15,10 +15,10 @@ uv run --package turn-ui turn-ui
 
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765) and click **Start listening**.
 The page defaults to `RUNTIME_URL` (`http://127.0.0.1:8766`). Override it with
-that env var or the Runtime field (IP and port of `turn-runtime-serve`, including
-a Docker host). The Head menu lists runs under `models/pause_head/`; `current`
-is the default. Changing the menu while listening sends `{type:"head"}` on the
-open socket.
+that env var or the Model API IP field (IP and port of `turn-runtime-serve`,
+including a Docker host). The ML Model menu lists runs under
+`models/pause_head/`; `current` is the default. Changing the menu while
+listening sends `{type:"head"}` on the open socket.
 
 Package internals: [`src/turn_ui/README.md`](src/turn_ui/README.md).
 

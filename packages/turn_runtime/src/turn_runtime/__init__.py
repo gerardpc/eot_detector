@@ -6,6 +6,7 @@ from importlib.metadata import version as package_version
 from .classifier import (
     DEFAULT_HEAD_DIR,
     DEFAULT_MODEL_DIR,
+    HEAD_LINEAR,
     HEAD_NAME,
     PauseClassifier,
     list_pause_heads,
@@ -23,6 +24,7 @@ __all__ = [
     "DEFAULT_HEAD_DIR",
     "DEFAULT_MODEL_DIR",
     "ENCODER_ID",
+    "HEAD_LINEAR",
     "HEAD_NAME",
     "PauseClassifier",
     "TurnEvent",

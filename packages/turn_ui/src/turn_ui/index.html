@@ -3,74 +3,405 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>End of turn</title>
+  <title>End of turn detector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
-    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-    body { margin: 0; min-height: 100vh; background: #09111f; color: #e5edf8; }
-    main { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0; }
-    h1 { margin: 0 0 8px; font-size: 1.6rem; letter-spacing: -.03em; }
-    .lead { color: #9fb0c7; max-width: 720px; line-height: 1.5; margin: 0 0 20px; }
-    .panel { background: #101c2e; border: 1px solid #233654; border-radius: 16px; padding: 20px; }
-    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
-    button { border: 0; border-radius: 999px; padding: 10px 18px; color: #06111e; background: #7dd3fc; font-weight: 700; cursor: pointer; }
+    :root {
+      color-scheme: dark;
+      --bg: #071018;
+      --panel: #0f1a2b;
+      --panel-border: #24364f;
+      --text: #e8eef7;
+      --muted: #8fa3bb;
+      --accent: #7dd3fc;
+      --speaking: #34d399;
+      --hold: #a78bfa;
+      --eot: #38bdf8;
+      --node: #132033;
+      --node-border: #2a405c;
+      font-family: Roboto, ui-sans-serif, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, #14304a 0%, transparent 55%),
+        var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    main {
+      width: min(1280px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 28px 0;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 22px;
+    }
+    h1 {
+      margin: 0;
+      font-family: Roboto, ui-sans-serif, system-ui, sans-serif;
+      font-size: clamp(2.35rem, 4.2vw, 3.1rem);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      line-height: 1.15;
+      color: #9ec9e8;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
+      gap: 22px;
+      align-items: stretch;
+    }
+    @media (max-width: 900px) {
+      body { align-items: flex-start; }
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      padding: 20px;
+    }
+    .flow-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 100%;
+    }
+    .flow-title {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .flow {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: space-between;
+      flex: 1;
+      gap: 0;
+      min-height: 420px;
+      font-size: 0.84rem;
+    }
+    .flow-node {
+      text-align: center;
+      padding: 12px 12px;
+      border: 1px solid var(--node-border);
+      background: var(--node);
+      color: #c5d3e5;
+      border-radius: 12px;
+      line-height: 1.35;
+      transition: border-color .2s, background .2s, box-shadow .2s, color .2s;
+    }
+    .flow-node.decision {
+      border-radius: 999px;
+      border-style: dashed;
+      padding: 14px 12px;
+    }
+    .flow-arrow {
+      color: #4a6280;
+      font-size: 0.72rem;
+      line-height: 1.35;
+      text-align: center;
+      padding: 10px 0;
+      transition: color .2s;
+    }
+    .flow-arrow .edge {
+      display: block;
+      color: #6f849c;
+      font-size: 0.7rem;
+      margin-bottom: 2px;
+    }
+    .flow-branch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      align-items: start;
+      flex: 1;
+    }
+    .flow-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 0;
+      min-width: 0;
+    }
+    .flow-node.active {
+      color: #fff;
+      border-color: currentColor;
+      border-style: solid;
+      box-shadow: 0 0 0 1px currentColor, 0 0 22px color-mix(in srgb, currentColor 35%, transparent);
+      background: color-mix(in srgb, currentColor 18%, var(--node));
+    }
+    .flow-node[data-node="speaking"].active,
+    .flow-node[data-node="loud"].active { color: var(--speaking); }
+    .flow-node[data-node="hold"].active { color: var(--hold); }
+    .flow-node[data-node="eot"].active { color: var(--eot); }
+    .flow-node[data-node="model"].active,
+    .flow-node[data-node="gap"].active,
+    .flow-node[data-node="pcm"].active { color: var(--accent); }
+    .flow-arrow.on { color: #9ec9e8; }
+    .flow-arrow.on .edge { color: #b8c7da; }
+
+    .controls {
+      display: grid;
+      grid-template-columns: auto minmax(180px, 1fr) minmax(180px, 1fr) minmax(160px, 0.9fr);
+      gap: 14px 18px;
+      align-items: end;
+      margin-bottom: 10px;
+    }
+    @media (max-width: 720px) {
+      .controls { grid-template-columns: 1fr 1fr; }
+      .controls .field-action { grid-column: 1 / -1; justify-self: start; }
+    }
+    @media (max-width: 520px) {
+      .controls { grid-template-columns: 1fr; }
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .field-action { padding-bottom: 1px; }
+    .field > span {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      display: block;
+    }
+    .field-threshold .threshold-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 40px;
+    }
+    .field-threshold input[type="range"] {
+      flex: 1;
+      min-width: 0;
+      accent-color: var(--accent);
+      height: 40px;
+      margin: 0;
+      cursor: pointer;
+    }
+    .field-threshold #threshold-value {
+      min-width: 2.6em;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 18px;
+      color: #06111e;
+      background: var(--accent);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      height: 40px;
+    }
     button.stop { background: #fda4af; }
     button:disabled { opacity: .5; cursor: not-allowed; }
-    label { color: #9fb0c7; font-size: .9rem; }
-    select, input[type="url"] { background: #0b1627; color: #e5edf8; border: 1px solid #233654; border-radius: 8px; padding: 8px 10px; }
-    input[type="url"] { width: min(280px, 100%); }
-    #status { color: #9fb0c7; }
-    .meter { height: 8px; margin: 16px 0 12px; background: #0a1424; border-radius: 99px; overflow: hidden; }
+    select, input[type="url"] {
+      width: 100%;
+      background: #0b1627;
+      color: var(--text);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 9px 10px;
+      font: inherit;
+      font-size: 0.9rem;
+      height: 40px;
+    }
+    .model-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+      margin: 0 0 14px;
+    }
+    .model-meta .chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 6px 10px;
+      border: 1px solid var(--panel-border);
+      border-radius: 999px;
+      background: #0b1627;
+      font-size: 0.78rem;
+      color: #d7e2f0;
+    }
+    .model-meta .chip strong {
+      color: var(--muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 0.68rem;
+    }
+    #error {
+      display: none;
+      margin: 0 0 12px;
+      color: #fda4af;
+      font-size: 0.85rem;
+    }
+    #error.visible { display: block; }
+    .meter {
+      height: 8px;
+      margin: 0 0 14px;
+      background: #0a1424;
+      border-radius: 99px;
+      overflow: hidden;
+    }
     #level { display: block; width: 0; height: 100%; background: #38bdf8; }
-    #state { font-size: 1.4rem; font-weight: 800; text-transform: uppercase; margin: 0 0 12px; }
-    .timeline-wrap { background: #0b1627; border: 1px solid #233654; border-radius: 12px; padding: 12px; }
-    .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 8px; }
-    .legend span { display: flex; align-items: center; gap: 6px; color: #b8c7da; font-size: .78rem; }
+    .timeline-wrap {
+      background: #0b1627;
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-bottom: 8px;
+    }
+    .legend span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #b8c7da;
+      font-size: .78rem;
+    }
     .swatch { width: 10px; height: 10px; border-radius: 99px; }
-    #timeline { width: 100%; height: 240px; display: block; }
+    #timeline { width: 100%; height: 320px; display: block; }
   </style>
 </head>
 <body>
 <main>
-  <h1>End of turn</h1>
-  <p class="lead">Human-side detector for voice agents. VAD for speech. After 100 ms of silence a classifier scores hold vs end of turn on the last 5 s. After 3 s of silence, end of turn is forced.</p>
-  <section class="panel">
-    <div class="row">
-      <button id="toggle">Start listening</button>
-      <label>Runtime
-        <input id="runtime-url" type="url" spellcheck="false" autocomplete="off">
-      </label>
-      <label>Head
-        <select id="head"></select>
-      </label>
-      <span id="status">Idle.</span>
-    </div>
-    <div class="meter"><span id="level"></span></div>
-    <div id="state">hold</div>
-    <div class="timeline-wrap">
-      <div class="legend" id="legend"></div>
-      <canvas id="timeline" width="1000" height="240" aria-label="State probability over time"></canvas>
-    </div>
-  </section>
+  <header>
+    <h1>End of turn detector</h1>
+  </header>
+  <div class="layout">
+    <aside class="panel flow-panel" aria-label="Detection pipeline">
+      <p class="flow-title">How it decides</p>
+      <div class="flow" id="flow">
+        <div class="flow-node" data-node="pcm">Human audio</div>
+        <div class="flow-arrow" data-edge="pcm-loud">▼</div>
+        <div class="flow-node decision" data-node="loud">Frame is loud?</div>
+        <div class="flow-branch">
+          <div class="flow-col">
+            <div class="flow-arrow" data-edge="loud-yes"><span class="edge">yes / &lt;100 ms quiet</span>▼</div>
+            <div class="flow-node" data-node="speaking">speaking</div>
+          </div>
+          <div class="flow-col">
+            <div class="flow-arrow" data-edge="loud-no"><span class="edge">quiet ≥ 100 ms</span>▼</div>
+            <div class="flow-node decision" data-node="gap">How long quiet?</div>
+            <div class="flow-arrow" data-edge="gap-model"><span class="edge">100 ms – 3 s · or ≥ 3 s → eot</span>▼</div>
+            <div class="flow-node" data-node="model">Score p(eot)</div>
+            <div class="flow-arrow" data-edge="model-out">▼</div>
+            <div class="flow-branch">
+              <div class="flow-node" data-node="hold"><span class="edge" id="hold-threshold-label" style="display:block;font-size:.65rem;color:#6f849c;margin-bottom:2px">&lt; 0.5</span>hold</div>
+              <div class="flow-node" data-node="eot"><span class="edge" id="eot-threshold-label" style="display:block;font-size:.65rem;color:#6f849c;margin-bottom:2px">≥ 0.5</span>eot</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <section class="panel">
+      <div class="controls">
+        <div class="field field-action">
+          <button id="toggle">Start listening</button>
+        </div>
+        <label class="field">
+          <span>Model API IP</span>
+          <input id="runtime-url" type="url" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>ML Model</span>
+          <select id="head"></select>
+        </label>
+        <label class="field field-threshold">
+          <span>Detection threshold</span>
+          <div class="threshold-row">
+            <input id="threshold" type="range" min="0" max="1" step="0.01" value="0.5">
+            <span id="threshold-value">0.50</span>
+          </div>
+        </label>
+      </div>
+      <div class="model-meta" id="model-meta" aria-live="polite"></div>
+      <p id="error" role="alert"></p>
+      <div class="meter"><span id="level"></span></div>
+      <div class="timeline-wrap">
+        <div class="legend" id="legend"></div>
+        <canvas id="timeline" width="1000" height="320" aria-label="State probability over time"></canvas>
+      </div>
+    </section>
+  </div>
 </main>
 <script>
 const DEFAULT_RUNTIME_URL = '__RUNTIME_URL__';
 const RUNTIME_URL_KEY = 'eot-runtime-url';
+const THRESHOLD_KEY = 'eot-threshold';
+const DEFAULT_THRESHOLD = 0.5;
 const SERIES = [
   {key: 'speaking', label: 'Speaking', color: '#34d399'},
   {key: 'hold', label: 'Hold', color: '#a78bfa'},
   {key: 'eot', label: 'EOT', color: '#38bdf8'},
 ];
+const FLOW_BY_STATE = {
+  speaking: {
+    nodes: ['pcm', 'loud', 'speaking'],
+    edges: ['pcm-loud', 'loud-yes'],
+  },
+  hold: {
+    nodes: ['pcm', 'loud', 'gap', 'model', 'hold'],
+    edges: ['pcm-loud', 'loud-no', 'gap-model', 'model-out'],
+  },
+  eot: {
+    nodes: ['pcm', 'loud', 'gap', 'model', 'eot'],
+    edges: ['pcm-loud', 'loud-no', 'gap-model', 'model-out'],
+  },
+};
+const ARCH_LABELS = {
+  'linear': 'linear (384→1)',
+  'linear-64-gelu-linear': 'MLP (384→64→GELU→1)',
+};
+const POOL_LABELS = {
+  mean: 'mean (full clip)',
+  tail: 'tail mean',
+  ema: 'EMA',
+};
 const HISTORY = 120;
 const history = SERIES.map(() => Array(HISTORY).fill(null));
+const headsById = {};
 const toggle = document.querySelector('#toggle');
-const statusEl = document.querySelector('#status');
-const stateEl = document.querySelector('#state');
+const errorEl = document.querySelector('#error');
 const levelEl = document.querySelector('#level');
 const headEl = document.querySelector('#head');
 const runtimeUrlEl = document.querySelector('#runtime-url');
+const thresholdEl = document.querySelector('#threshold');
+const thresholdValueEl = document.querySelector('#threshold-value');
+const holdThresholdLabel = document.querySelector('#hold-threshold-label');
+const eotThresholdLabel = document.querySelector('#eot-threshold-label');
+const modelMetaEl = document.querySelector('#model-meta');
 const canvas = document.querySelector('#timeline');
 const ctx = canvas.getContext('2d');
 const legend = document.querySelector('#legend');
+const flowEl = document.querySelector('#flow');
 let audioContext, source, processor, mute, stream, socket, recording = false;
 
 SERIES.forEach(series => {
@@ -79,7 +410,15 @@ SERIES.forEach(series => {
   legend.append(item);
 });
 
-function setStatus(text) { statusEl.textContent = text; }
+function setError(text) {
+  if (!text) {
+    errorEl.textContent = '';
+    errorEl.classList.remove('visible');
+    return;
+  }
+  errorEl.textContent = text;
+  errorEl.classList.add('visible');
+}
 
 function runtimeOrigin() {
   return (runtimeUrlEl.value.trim() || DEFAULT_RUNTIME_URL).replace(/\/$/, '');
@@ -94,6 +433,90 @@ function runtimeWs(path) {
   const url = new URL(path, origin.endsWith('/') ? origin : `${origin}/`);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
+}
+
+function highlightFlow(state) {
+  const active = FLOW_BY_STATE[state] || FLOW_BY_STATE.hold;
+  flowEl.querySelectorAll('[data-node]').forEach(node => {
+    node.classList.toggle('active', active.nodes.includes(node.dataset.node));
+  });
+  flowEl.querySelectorAll('[data-edge]').forEach(edge => {
+    edge.classList.toggle('on', active.edges.includes(edge.dataset.edge));
+  });
+}
+
+function thresholdValue() {
+  const value = Number(thresholdEl.value);
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : DEFAULT_THRESHOLD;
+}
+
+function applyThresholdUi() {
+  const value = thresholdValue();
+  thresholdEl.value = String(value);
+  thresholdValueEl.textContent = value.toFixed(2);
+  holdThresholdLabel.textContent = `< ${value.toFixed(2)}`;
+  eotThresholdLabel.textContent = `≥ ${value.toFixed(2)}`;
+}
+
+function persistThreshold() {
+  localStorage.setItem(THRESHOLD_KEY, String(thresholdValue()));
+}
+
+function sendThreshold() {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({type: 'threshold', value: thresholdValue()}));
+  }
+}
+
+function chip(label, value) {
+  return `<span class="chip"><strong>${label}</strong>${value}</span>`;
+}
+
+function parseMetaFromLabel(label) {
+  const text = String(label || '');
+  const archMatch = text.match(/linear-64-gelu-linear|\blinear\b/);
+  const timed = text.match(/\b(tail|ema)-(\d+)ms\b/);
+  const mean = /\bmean\b/.test(text);
+  return {
+    head: archMatch ? archMatch[0] : null,
+    pool: timed ? timed[1] : (mean ? 'mean' : null),
+    pool_ms: timed ? Number(timed[2]) : null,
+  };
+}
+
+function selectedMeta() {
+  let fromApi = {...(headsById[headEl.value] || {})};
+  const label = headEl.options[headEl.selectedIndex]?.textContent || '';
+  if (!fromApi.head) {
+    const linked = label.match(/current \(([^)]+)\)/);
+    if (linked && headsById[linked[1]]) {
+      fromApi = {...headsById[linked[1]], ...fromApi};
+    }
+  }
+  const fromLabel = parseMetaFromLabel(label);
+  // Prefer structured /heads fields; fall back to parsing the option label
+  // when an older runtime is still running without head/pool/pool_ms.
+  const head = fromApi.head ?? fromLabel.head;
+  const pool = fromApi.pool ?? fromLabel.pool ?? 'mean';
+  const pool_ms = fromApi.pool_ms ?? fromLabel.pool_ms ?? 1000;
+  return {head, pool, pool_ms};
+}
+
+function renderModelMeta() {
+  const meta = selectedMeta();
+  const archKey = meta.head;
+  const poolKey = meta.pool || 'mean';
+  const poolMs = Number(meta.pool_ms);
+  const architecture = ARCH_LABELS[archKey] || archKey || 'unknown';
+  const pool = POOL_LABELS[poolKey] || poolKey;
+  const length = poolKey === 'mean'
+    ? 'full clip'
+    : (Number.isFinite(poolMs) ? `${Math.round(poolMs)} ms` : '—');
+  modelMetaEl.innerHTML = [
+    chip('Architecture', architecture),
+    chip('Pool', pool),
+    chip('Length', length),
+  ].join('');
 }
 
 function pushHistory(state, pEot) {
@@ -112,22 +535,34 @@ function drawTimeline() {
   canvas.width = width * dpr; canvas.height = height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#071018'; ctx.fillRect(0, 0, width, height);
-  const left = 72, right = 12, top = 10, bottom = 22;
+  const left = 72, right = 12, top = 10, bottom = 28;
   const plotW = width - left - right, plotH = height - top - bottom;
-  ctx.strokeStyle = '#1e334d'; ctx.lineWidth = 1; ctx.font = '11px system-ui'; ctx.fillStyle = '#6f849c';
+  const windowSeconds = 30;
+  ctx.strokeStyle = '#1e334d'; ctx.lineWidth = 1; ctx.font = '11px Roboto, system-ui'; ctx.fillStyle = '#6f849c';
   [0, 0.5, 1].forEach(tick => {
     const y = top + plotH * (1 - tick);
     ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + plotW, y); ctx.stroke();
     ctx.textAlign = 'right'; ctx.fillText(tick.toFixed(1), left - 8, y + 4);
   });
+  for (let sec = 0; sec <= windowSeconds; sec += 5) {
+    const x = left + plotW * (sec / windowSeconds);
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, top + plotH);
+    ctx.strokeStyle = sec === 0 || sec === windowSeconds ? '#2a405c' : '#1e334d';
+    ctx.stroke();
+    ctx.fillStyle = '#6f849c';
+    ctx.textAlign = sec === windowSeconds ? 'right' : (sec === 0 ? 'left' : 'center');
+    const label = sec === windowSeconds ? 'now' : `${windowSeconds - sec}s`;
+    ctx.fillText(label, x, height - 8);
+  }
   ctx.save();
   ctx.translate(14, top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.textAlign = 'center';
+  ctx.fillStyle = '#6f849c';
   ctx.fillText('state probability', 0, 0);
   ctx.restore();
-  ctx.textAlign = 'left'; ctx.fillText('30s ago', left, height - 6);
-  ctx.textAlign = 'right'; ctx.fillText('now', left + plotW, height - 6);
   SERIES.forEach((series, s) => {
     const points = [];
     for (let i = 0; i < HISTORY; i++) {
@@ -154,23 +589,18 @@ function drawTimeline() {
 function applyEvent(payload) {
   const state = payload.state || 'hold';
   const pEot = Number(payload.p_eot) || 0;
-  stateEl.textContent = state;
-  stateEl.style.color = (SERIES.find(s => s.key === state) || SERIES[1]).color;
+  highlightFlow(state);
   pushHistory(state, pEot);
   drawTimeline();
-  const silence = Number(payload.silence_seconds) || 0;
-  if (state === 'speaking') {
-    setStatus('speaking');
-    return;
-  }
-  setStatus(`${state} · p(eot) ${pEot.toFixed(2)} · ${Math.round(silence * 1000)} ms`);
 }
 
 async function loadHeads() {
   const response = await fetch(runtimeHttp('/heads'));
   const payload = await response.json();
   headEl.innerHTML = '';
+  Object.keys(headsById).forEach(key => delete headsById[key]);
   (payload.heads || []).forEach(item => {
+    headsById[item.id] = item;
     const option = document.createElement('option');
     option.value = item.id;
     option.textContent = item.label;
@@ -183,19 +613,31 @@ async function loadHeads() {
     option.textContent = 'current';
     option.selected = true;
     headEl.append(option);
+    headsById.current = {id: 'current', head: null, pool: 'mean', pool_ms: 1000};
   }
+  renderModelMeta();
 }
 
 headEl.addEventListener('change', () => {
+  renderModelMeta();
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({type: 'head', id: headEl.value}));
   }
+});
+
+thresholdEl.addEventListener('input', () => {
+  applyThresholdUi();
+  persistThreshold();
+  sendThreshold();
 });
 
 runtimeUrlEl.addEventListener('change', () => {
   localStorage.setItem(RUNTIME_URL_KEY, runtimeOrigin());
   loadHeads().catch(() => {
     headEl.innerHTML = '<option value="current" selected>current</option>';
+    Object.keys(headsById).forEach(key => delete headsById[key]);
+    headsById.current = {id: 'current', head: null, pool: 'mean', pool_ms: 1000};
+    renderModelMeta();
   });
 });
 
@@ -206,19 +648,25 @@ function connectSocket(sampleRate) {
     const payload = JSON.parse(event.data);
     if (payload.state) applyEvent(payload);
   };
-  socket.onerror = () => setStatus('Live stream unavailable');
+  socket.onerror = () => setError('Live stream unavailable');
   return new Promise((resolve, reject) => {
     socket.onopen = () => {
-      socket.send(JSON.stringify({type: 'start', sampleRate, head: headEl.value || 'current'}));
+      socket.send(JSON.stringify({
+        type: 'start',
+        sampleRate,
+        head: headEl.value || 'current',
+        threshold: thresholdValue(),
+      }));
       resolve();
     };
-    socket.onclose = () => { if (recording) setStatus('Live stream closed'); };
+    socket.onclose = () => { if (recording) setError('Live stream closed'); };
     setTimeout(() => reject(new Error('websocket timeout')), 4000);
   });
 }
 
 async function start() {
-  toggle.disabled = true; setStatus('Starting…');
+  toggle.disabled = true;
+  setError('');
   try {
     stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1}});
     audioContext = new AudioContext();
@@ -236,7 +684,10 @@ async function start() {
     recording = true;
     runtimeUrlEl.disabled = true;
     toggle.disabled = false; toggle.textContent = 'Stop listening'; toggle.classList.add('stop');
-  } catch (error) { toggle.disabled = false; setStatus(`Cannot start: ${error.message}`); }
+  } catch (error) {
+    toggle.disabled = false;
+    setError(`Cannot start: ${error.message}`);
+  }
 }
 
 function stop() {
@@ -246,15 +697,24 @@ function stop() {
   if (stream) stream.getTracks().forEach(track => track.stop());
   if (audioContext) audioContext.close();
   runtimeUrlEl.disabled = false;
-  toggle.textContent = 'Start listening'; toggle.classList.remove('stop'); levelEl.style.width = '0'; setStatus('Stopped.');
+  toggle.textContent = 'Start listening'; toggle.classList.remove('stop');
+  levelEl.style.width = '0';
+  setError('');
+  highlightFlow('hold');
 }
 
 toggle.addEventListener('click', () => recording ? stop() : start());
 window.addEventListener('resize', drawTimeline);
 runtimeUrlEl.value = localStorage.getItem(RUNTIME_URL_KEY) || DEFAULT_RUNTIME_URL;
+const savedThreshold = Number(localStorage.getItem(THRESHOLD_KEY));
+thresholdEl.value = String(Number.isFinite(savedThreshold) ? savedThreshold : DEFAULT_THRESHOLD);
+applyThresholdUi();
 loadHeads().catch(() => {
   headEl.innerHTML = '<option value="current" selected>current</option>';
+  headsById.current = {id: 'current', head: null, pool: 'mean', pool_ms: 1000};
+  renderModelMeta();
 });
+highlightFlow('hold');
 drawTimeline();
 </script>
 </body>

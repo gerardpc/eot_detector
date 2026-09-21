@@ -38,17 +38,29 @@ def test_list_pause_heads_includes_current_and_runs(tmp_path: Path) -> None:
     run = root / "20260101-000000"
     run.mkdir(parents=True)
     (run / "best.pt").write_bytes(b"best")
-    (run / "config.json").write_text('{"best_val_loss": 0.37}', encoding="utf-8")
+    (run / "config.json").write_text(
+        '{"best_val_loss": 0.37, "head": "linear-64-gelu-linear"}',
+        encoding="utf-8",
+    )
     empty = root / "20260101-111111"
     empty.mkdir()
     current = root / "current"
     current.symlink_to(run.name, target_is_directory=True)
     heads = list_pause_heads(root)
-    assert heads[0] == {"id": "current", "label": "current (20260101-000000)"}
+    assert heads[0]["id"] == "current"
+    assert heads[0]["label"] == "current (20260101-000000)"
+    assert heads[0]["head"] == "linear-64-gelu-linear"
+    assert heads[0]["pool"] == "mean"
+    assert heads[0]["pool_ms"] == 1000.0
     assert heads[1]["id"] == "20260101-000000"
     assert "val 0.370" in heads[1]["label"]
+    assert "linear-64-gelu-linear" in heads[1]["label"]
+    assert heads[1]["head"] == "linear-64-gelu-linear"
+    assert heads[1]["pool"] == "mean"
     assert all(item["id"] != "20260101-111111" for item in heads)
 
 
 def test_list_pause_heads_without_store(tmp_path: Path) -> None:
-    assert list_pause_heads(tmp_path / "missing") == [{"id": "current", "label": "current"}]
+    assert list_pause_heads(tmp_path / "missing") == [
+        {"id": "current", "label": "current", "head": None, "pool": "mean", "pool_ms": 1000.0}
+    ]

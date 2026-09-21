@@ -15,6 +15,10 @@ N_FFT = 400
 """STFT window size matching the Hugging Face preprocessor."""
 HOP_LENGTH = 160
 """STFT hop matching the Hugging Face preprocessor (10 ms at 16 kHz)."""
+ENCODER_CONV_STRIDE = 2
+"""Stride of `conv2`; each encoder step covers this many STFT hops."""
+ENCODER_FRAME_SECONDS = (HOP_LENGTH * ENCODER_CONV_STRIDE) / WHISPER_SR
+"""Audio seconds per encoder time step (~20 ms, 50 steps/s)."""
 
 
 class WhisperSelfAttention(nn.Module):

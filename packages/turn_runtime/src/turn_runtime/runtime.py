@@ -95,6 +95,7 @@ class TurnRunner:
         self._cached_p_eot = 0.0
         self._last_classify_silence = -1.0
         self._head_id = "current"
+        self.eot_threshold = EOT_THRESHOLD
 
     def _resolved_head_dir(self) -> Path:
         """Return the pause-head store for this runner."""
@@ -139,6 +140,17 @@ class TurnRunner:
                 load_head(target)
         return resolve_head_weights(target) or target
 
+    def set_threshold(self, value: float) -> float:
+        """Clamp `value` to `[0, 1]` and use it as the live hold/eot cutoff."""
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = EOT_THRESHOLD
+        if parsed != parsed:  # NaN
+            parsed = EOT_THRESHOLD
+        self.eot_threshold = min(1.0, max(0.0, parsed))
+        return self.eot_threshold
+
     def consume_stream(self, samples: np.ndarray, sample_rate: int) -> TurnEvent:
         """Ingest a PCM chunk and return the latest speaking / hold / eot state."""
         chunk = np.asarray(samples, dtype=np.float32).reshape(-1)
@@ -169,6 +181,7 @@ class TurnRunner:
             "min_silence_seconds": self.min_silence_seconds,
             "force_eot_seconds": FORCE_EOT_SECONDS,
             "context_seconds": self.context_seconds,
+            "eot_threshold": self.eot_threshold,
         }
 
     def _process_frames(self, samples: np.ndarray, sample_rate: int) -> None:
@@ -208,7 +221,7 @@ class TurnRunner:
 
     def _pause_state(self) -> TurnState:
         """Map current p(eot) onto `hold` or `eot`."""
-        return "hold" if self._pause_p_eot() < EOT_THRESHOLD else "eot"
+        return "hold" if self._pause_p_eot() < self.eot_threshold else "eot"
 
     def _pause_p_eot(self) -> float:
         """Score p(eot) for the current pause, with hop cache and 3 s force-eot."""

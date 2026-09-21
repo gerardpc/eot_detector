@@ -3,9 +3,10 @@
 Dataset preparation and pause-head training (`eot-ml-core`).
 
 This package downloads [`livekit/eot-bench-data`](https://huggingface.co/datasets/livekit/eot-bench-data),
-cuts causal pause clips, and trains a small MLP head (`384 → 64 → 1`, GELU)
-on frozen Whisper-tiny embeddings used by `turn-runtime`. Train and live
-inference share `PauseClassifier` (~25k parameters).
+cuts causal pause clips, and trains a pause head on frozen Whisper-tiny
+embeddings used by `turn-runtime`. The recipe is a linear `384 → 1` head
+on a **tail pool** of the last **1 s** of encoder frames. Train and live
+inference share `PauseClassifier`.
 
 A hashed 80/20 split of the public validation set is for local training only.
 It is not an official eot-bench score.
@@ -45,9 +46,13 @@ uv run --package eot-ml-core tensorboard --logdir models/pause_head
 `eot-train` needs those clips (`eot-prepare` first) and the encoder under
 `models/whisper-tiny/`. If the encoder is missing, it downloads it. Then it
 writes a new run folder and points `models/pause_head/current` at it.
-Optional flags: `--epochs`, `--batch-size`, `--lr`, `--weight-decay`,
-`--seed`, `--split-seed`, `--run-id`, `--eval-every`, `--dataset-dir`,
-`--out-dir`.
+Optional flags: `--head` (default `linear`), `--pool` (default `tail`),
+`--pool-ms` (default 1000), `--epochs`, `--batch-size`, `--lr`,
+`--weight-decay`, `--seed`, `--split-seed`, `--run-id`, `--eval-every`,
+`--dataset-dir`, `--out-dir`, `--no-promote`.
+
+`--pool tail` averages the last 1 s of encoder frames. `--no-promote`
+keeps `current` on the previous run.
 
 ## Training runs
 

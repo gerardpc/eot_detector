@@ -28,7 +28,7 @@ The page defaults to the runtime at [http://127.0.0.1:8766](http://127.0.0.1:876
 (`RUNTIME_URL`, overridable on the page). The runtime loads Whisper-tiny and
 `current` at startup. The Head menu lists runs under `models/pause_head/`.
 
-To point the UI at a container, set `RUNTIME_URL` or the Runtime field to
+To point the UI at a container, set `RUNTIME_URL` or the Model API IP field to
 `http://<host>:<port>` (see [Docker](#docker)). How the two processes
 relate is in [`ARCHITECTURE.md`](ARCHITECTURE.md#serving).
 
@@ -54,22 +54,23 @@ This is **not** a WebSocket load test. It scores training clips with the
 same encoder + pause head the runtime uses, and asks: at this many clip
 scores per second, what does latency look like?
 
-Default: preload 128 clips, then for each of `--rps 1,2,4,8,max` run
-`--seconds 10`. `1,2,4,8` are open-loop offered rates (try to start that
-many scores per second). `max` keeps `--workers` busy until the encoder
-cannot go faster. `--url` POSTs the same WAVs to `POST /infer` on a
-running server; without it, the CLI loads Whisper in-process.
+Default: 2 s closed-loop **warmup** (discarded), preload 128 clips, then
+for each of `--rps 1,2,4,8,max` measure `--seconds 10`. `1,2,4,8` are
+open-loop offered rates in **req/s** (try to start that many scores per
+second). `max` keeps `--workers` busy until the encoder cannot go faster.
+`--url` POSTs the same WAVs to `POST /infer` on a running server; without
+it, the CLI loads Whisper in-process. `--warmup-seconds 0` skips warmup.
 
 Each run writes `data/stress_tests/<YYYY-MM-DDTHH-MM-SS>/` (gitignored
 with the rest of `data/`):
 
 | File | Contents |
 | --- | --- |
-| `report.md` | Summary table plus the plots |
-| `latency_distribution.png` | Encoder latency box plot per offered RPS |
-| `throughput.png` | Achieved vs offered RPS, and p50/p99 vs rate |
+| `report.md` | Summary table (units on every column) plus the plots |
+| `latency_distribution.png` | Encoder+lock latency box plot per offered rate |
+| `throughput.png` | Achieved vs offered req/s, and p50/p99 vs rate |
 | `summary.json` | The same numbers, machine-readable |
-| `samples.csv` | One row per clip score |
+| `samples.csv` | One row per *measured* clip score (warmup excluded) |
 
 `--output-dir` overrides the folder. Extra `--workers` mostly queue on
 the shared encoder lock; they do not run N forwards in parallel. What
@@ -92,12 +93,21 @@ These commands do **not** all download the same thing.
    into `data/raw_dataset/` (Hugging Face cache, first run is large) and
    writes labeled clips to `data/train_dataset/`.
 3. **`eot-train`** reads those clips, encodes them with Whisper-tiny, and
-   trains only the MLP. It does not download the dataset again.
+   trains only the pause head. It does not download the dataset again.
 
-`eot-train` writes `models/pause_head/<run_id>/` (`best.pt`, `config.json`,
-TensorBoard logs) and points `models/pause_head/current` at that run.
-Start the runtime again, or pick the run in the Head menu, to load the
-new weights.
+Each `eot-train` writes a **new** `models/pause_head/<run_id>/` folder
+(`best.pt`, `config.json`, TensorBoard logs). It does not overwrite older
+run directories. By default it retargets the `current` symlink at the new
+run. To keep serving the previous head, pass `--no-promote`.
+
+```bash
+uv run --package eot-ml-core eot-train --head linear --pool tail --pool-ms 1000 --epochs 100 --no-promote
+```
+
+The training recipe is a **linear** `384 → 1` head on a **tail pool**: mean of
+the last **1 s** of encoder frames (~50 steps at 50 Hz). Shorter clips use
+whatever frames they have. `--no-promote` keeps `current` on the previous
+run. Pick the new run in the Head menu, or point `current` at it later.
 
 Clip labels and the train/val split are described in
 [`ARCHITECTURE.md`](ARCHITECTURE.md#dataset).
@@ -124,7 +134,7 @@ docker build -t eot-runtime:local -f docker/turn_runtime/Dockerfile .
 docker run --rm -p 8766:8766 eot-runtime:local
 ```
 
-Then run `turn-ui` as usual and set Runtime to `http://127.0.0.1:8766` (or the
+Then run `turn-ui` as usual and set Model API IP to `http://127.0.0.1:8766` (or the
 machine IP if the UI is elsewhere). The image listens on `0.0.0.0:8766` and
 allows any browser origin.
 

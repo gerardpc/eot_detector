@@ -71,6 +71,7 @@ def test_write_report(tmp_path: Path) -> None:
             "dataset_dir": "/tmp/clips",
             "clips_preloaded": 2,
             "workers": 1,
+            "warmup_seconds": 2.0,
             "seconds_per_stage": 1,
             "seed": 0,
             "rps": ["1", "max"],
@@ -81,20 +82,20 @@ def test_write_report(tmp_path: Path) -> None:
                 offered_rps=1.0,
                 achieved_rps=1.0,
                 workers=1,
-                forwards=3,
-                seconds=3.0,
-                wall_ms=[10.0, 11.0, 12.0],
-                encoder_ms=[9.0, 10.0, 11.0],
+                n_scored=3,
+                duration_s=3.0,
+                client_ms=[10.0, 11.0, 12.0],
+                encoder_lock_ms=[9.0, 10.0, 11.0],
             ),
             StageResult(
                 label="max",
                 offered_rps=None,
                 achieved_rps=40.0,
                 workers=1,
-                forwards=4,
-                seconds=0.1,
-                wall_ms=[8.0, 8.5, 9.0, 20.0],
-                encoder_ms=[8.0, 8.5, 9.0, 20.0],
+                n_scored=4,
+                duration_s=0.1,
+                client_ms=[8.0, 8.5, 9.0, 20.0],
+                encoder_lock_ms=[8.0, 8.5, 9.0, 20.0],
             ),
         ],
     )
@@ -102,26 +103,39 @@ def test_write_report(tmp_path: Path) -> None:
     assert report.is_file()
     text = report.read_text(encoding="utf-8")
     assert "Encoder stress 2026-09-20T23-09-00" in text
+    assert "offered (req/s)" in text
+    assert "encoder+lock p50 (ms)" in text
+    assert "Warmup: 2.0 s" in text
     assert "latency_distribution.png" in text
     assert (tmp_path / "latency_distribution.png").is_file()
     assert (tmp_path / "throughput.png").is_file()
     assert (tmp_path / "summary.json").is_file()
     samples = (tmp_path / "samples.csv").read_text(encoding="utf-8")
-    assert "encoder_latency_ms" in samples
+    assert "client_latency_ms" in samples
+    assert "encoder_lock_ms" in samples
     assert samples.count("\n") == 8  # header + 7 samples
 
 
-def test_run_stress_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    root = _write_clip_dir(tmp_path, n=2)
+def _patch_fake_classifier(
+    monkeypatch: pytest.MonkeyPatch, counter: dict[str, int] | None = None
+) -> None:
+    """Install a no-op pause head; optionally count `p_eot` calls."""
 
     class _FakeClassifier:
         device = "cpu"
 
         def p_eot(self, audio: np.ndarray, sample_rate: int) -> float:
+            if counter is not None:
+                counter["n"] += 1
             return 0.4
 
     monkeypatch.setattr("turn_runtime.stress._ensure_encoder", lambda: None)
     monkeypatch.setattr("turn_runtime.stress.PauseClassifier", lambda **_kwargs: _FakeClassifier())
+
+
+def test_run_stress_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = _write_clip_dir(tmp_path, n=2)
+    _patch_fake_classifier(monkeypatch)
     run = run_stress(
         dataset_dir=root,
         seconds=0.05,
@@ -130,11 +144,32 @@ def test_run_stress_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         seed=0,
         url=None,
         rps=[None],
+        warmup_seconds=0.0,
     )
     assert run.meta["mode"] == "in-process"
+    assert run.meta["warmup_seconds"] == 0.0
     assert len(run.stages) == 1
     stage = run.stages[0]
     assert stage.label == "max"
-    assert stage.forwards >= 1
+    assert stage.n_scored >= 1
     assert stage.achieved_rps > 0
-    assert stage.stats()["encoder_latency_ms_p50"] >= 0
+    assert stage.stats()["encoder_lock_ms_p50"] >= 0
+
+
+def test_warmup_not_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = _write_clip_dir(tmp_path, n=2)
+    counter = {"n": 0}
+    _patch_fake_classifier(monkeypatch, counter)
+    run = run_stress(
+        dataset_dir=root,
+        seconds=0.05,
+        clips=2,
+        workers=1,
+        seed=0,
+        url=None,
+        rps=[None],
+        warmup_seconds=0.05,
+    )
+    scored = run.stages[0].n_scored
+    assert counter["n"] > scored
+    assert run.meta["warmup_seconds"] == 0.05

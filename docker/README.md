@@ -9,7 +9,7 @@ image.
   and the current `best.pt` pause head baked in.
 
 The UI stays on the host (or a separate process). Point it at the published
-runtime port with `RUNTIME_URL` or the Runtime field on the page.
+runtime port with `RUNTIME_URL` or the Model API IP field on the page.
 
 ## Relation with training artifacts
 

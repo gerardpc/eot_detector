@@ -1,16 +1,16 @@
 # Architecture
 
-When a human talks to a voice agent, the agent has to know when to start
-speaking. Jump in too soon and it interrupts; wait too long and it feels
-slow. 
+When a human talks to a voice agent, the agent has to know when it's its turn to start
+speaking. If it jumps in too soon, it will interrupt the user; if it waits too long, the 
+agent will feel slow. 
 
-This document explains how our implementation of the detector works, what model powers it, where the dataset that was used to train it comes from, and how the FastAPI services that power the detector fit together.
+This document explains how our implementation of such detector works, what model powers it, where the dataset that was used to train it comes from, and how the FastAPI services that power the detector fit together.
 
 ## Overview
 
 Most audio produced by the human during the conversation doesn't reach the classifier model. Loudness is measured on 20 ms frames (with an energy VAD). While the signal is loud, the state is `speaking`. A dip shorter than 100 ms is still treated as speech.
 
-After 100 ms of silence it is a real pause with high probability, and only then we send an audio clipt to our classifier. The output score is **`p(eot)`**, the probability that this pause is the end of the turn. By default, `p(eot) ≥ 0.5` is `eot` and below that is `hold` (although of course the threshold can be moved anywhere in `[0, 1]` if you would rather interrupt less, or wait less).
+After 100 ms of silence it is a real pause with high probability, and only then we send an audio clipt to our classifier. The output score is **`p(eot)`**, the probability that this pause is the end of the turn. By default, `p(eot) ≥ 0.5` is `eot` and below that is `hold`. On the live WebSocket path that cutoff is per session (default `0.5`, overridable in `[0, 1]` via `start.threshold` or a mid-stream `{type:"threshold"}` message) so you can interrupt less or wait less without restarting the runtime.
 
 If silence lasts three seconds we return `eot` without scoring. That is
 long enough to be almost sure that it's really an end-of-turn, and also long enough to be out of distribution for the dataset used to train the model.
@@ -48,14 +48,15 @@ Hz, finer at low Hz, closer to human hearing) and log-compressed.
 The official Whisper was trained on 30s clips, but in our case, our clips are **at most 5 s**
 of human audio ending at the pause — shorter if the turn is shorter.
 
-We then **mean-pool**: average the (however many) vectors we got per clip
-into a single 384-d vector. The 384-d average then goes
-through a small MLP (`384 → 64 → GELU → 1`, about 25k parameters), which is finally
-sent to a sigmoid and used to predict `eot`/`hold`.
+We then reduce the encoder frames to a single 384-d vector by **tail-pooling**:
+average only the last **1 s** (~50 encoder steps; conv2 stride 2 at a 10 ms
+hop is 50 steps/s). Shorter clips use whatever frames they have. That
+vector goes through a linear pause head (`384 → 1`). The logit goes through
+a sigmoid and is used to predict `eot`/`hold`.
 
 ## Training
 
-We freeze the encoder and train only the MLP. Because the encoder never
+We freeze the encoder and train only the head. Because the encoder never
 changes, each clip is encoded once at the start of a training job and the
 384-d vectors sit in memory. The epochs then fit the tiny head, so the
 slow part is that first pass, not the optimization. Once the optimizer starts,
@@ -138,7 +139,9 @@ connection open).
 
 | Direction | Payload |
 | --- | --- |
-| Client → server (text) | `{ "type": "start", "sampleRate": 48000, "head": "current" }` |
+| Client → server (text) | `{ "type": "start", "sampleRate": 48000, "head": "current", "threshold": 0.5 }` |
+| Client → server (text) | `{ "type": "head", "id": "current" }` |
+| Client → server (text) | `{ "type": "threshold", "value": 0.5 }` |
 | Client → server (binary) | Little-endian float32 mono PCM (waveform samples) |
 | Server → client (JSON) | `{ "ok", "state", "silence_seconds", "rms", "p_eot" }` |
 
@@ -153,9 +156,10 @@ not run N encoder forwards in parallel.
 
 `turn-runtime-stress` is the encoder bench, not a socket flood. It
 replays clips from `data/train_dataset/` (in-process, or `POST /infer`
-with `--url`) at a list of offered rates. For each rate it records
-achieved forwards/s and the latency distribution (client wall clock, and
-the `/infer` `latency_ms` field). Output is a markdown report with plots
+with `--url`) at a list of offered rates. A short closed-loop warmup
+runs first and is discarded, then each rate records achieved req/s and
+latency (client wall clock, and the `/infer` `latency_ms` field, which
+is encoder + infer-lock wait). Output is a markdown report with plots
 under `data/stress_tests/<datetime>/`. How to run it is in
 [`SETUP.md`](SETUP.md#encoder-throughput). The live WebSocket path is a
 separate concern.
